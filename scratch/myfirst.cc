@@ -22,8 +22,9 @@
 #include "ns3/csma-module.h"
 #include "ns3/wifi-module.h"
 #include "ns3/internet-module.h"
-#include "ns3/udp-echo-client.h"
-#include "ns3/udp-echo-server.h"
+#include "ns3/udp-echo-helper.h"
+#include "ns3/wifi-mac-header.h"
+#include "ns3/wave-module.h"
 
 using namespace ns3;
 
@@ -47,65 +48,75 @@ main (int argc, char *argv[])
   Config::SetDefault ("ns3::RandomWalk2dMobilityModel::Bounds", StringValue ("0|200|0|200"));
 
 
-  uint32_t nCsma = 3;
-  uint32_t nWifi = 3;
 
   CommandLine cmd (__FILE__);
   
-
-
   cmd.Parse (argc, argv);
 
-  NodeContainer p2pNodes;
-  p2pNodes.Create (2);
-
-  PointToPointHelper pointToPoint;
-  pointToPoint.SetDeviceAttribute ("DataRate", StringValue ("5Mbps"));
-  pointToPoint.SetChannelAttribute ("Delay", StringValue ("2ms"));
-
-  NetDeviceContainer p2pDevices = pointToPoint.Install (p2pNodes);
-
-  NodeContainer csmaNodes;
-  csmaNodes.Add (p2pNodes.Get (1));
-  csmaNodes.Create (nCsma);
-
-  CsmaHelper csma;
-  csma.SetChannelAttribute ("DataRate", StringValue ("100Mbps"));
-  csma.SetChannelAttribute ("Delay", TimeValue (NanoSeconds (6560)));
-
-  NetDeviceContainer csmaDevices;
-  csmaDevices = csma.Install (csmaNodes);
 
   NodeContainer wifiStaNodes;
-  wifiStaNodes.Create (nWifi);
-  NodeContainer wifiApNode = p2pNodes.Get (0);
+  wifiStaNodes.Create (10);   // Create 10 station node objects
+  NodeContainer wifiApNode;
+  wifiApNode.Create (1);   // Create 1 access point node object
 
+  const auto& ap = wifiApNode.Get(0);
+  
+  // Create a channel helper and phy helper, and then create the channel
   YansWifiChannelHelper channel = YansWifiChannelHelper::Default ();
-  YansWifiPhyHelper phy = YansWifiPhyHelper::Default ();
-
+  YansWifiPhyHelper phy;
   phy.SetChannel (channel.Create ());
-
+  
+  // Create a WifiMacHelper, which is reused across STA and AP configurations
+  WifiMacHelper mac;
+  
+  // Create a WifiHelper, which will use the above helpers to create
+  // and install Wifi devices.  Configure a Wifi standard to use, which
+  // will align various parameters in the Phy and Mac to standard defaults.
   WifiHelper wifi;
-  wifi.SetRemoteStationManager ("ns3::AarfWifiManager");
+  wifi.SetStandard (WIFI_STANDARD_80211n_5GHZ);
+  // Declare NetDeviceContainers to hold the container returned by the helper
+  NetDeviceContainer wifiStaDevices;
+  NetDeviceContainer wifiApDevice;
+  
+  // Perform the installation
+  mac.SetType ("ns3::StaWifiMac");
+  wifiStaDevices = wifi.Install (phy, mac, wifiStaNodes);
+  mac.SetType ("ns3::ApWifiMac");
+  wifiApDevice = wifi.Install (phy, mac, wifiApNode);
 
-  NqosWifiMacHelper mac = NqosWifiMacHelper::Default ();
+  
+  InternetStackHelper stack;
+  stack.Install (wifiApNode);
+  stack.Install (wifiStaNodes);
 
-  Ssid ssid = Ssid ("ns-3-ssid");
-  mac.SetType ("ns3::NqstaWifiMac",
-    "Ssid", SsidValue (ssid),
-    "ActiveProbing", BooleanValue (false));
+  Ipv4AddressHelper address;
 
-  NetDeviceContainer staDevices;
-  staDevices = wifi.Install (phy, mac, wifiStaNodes);
+  address.SetBase ("10.1.1.0", "255.255.255.0");
 
 
-  mac.SetType ("ns3::NqapWifiMac", 
-    "Ssid", SsidValue (ssid),
-    "BeaconGeneration", BooleanValue (true),
-    "BeaconInterval", TimeValue (Seconds (2.5)));
+  address.Assign (wifiApDevice);
+  address.Assign (wifiStaDevices);
 
-  NetDeviceContainer apDevices;
-  apDevices = wifi.Install (phy, mac, wifiApNode);
+
+  UdpEchoServerHelper echoServer (9);
+
+  ApplicationContainer serverApps = echoServer.Install (ap);
+  serverApps.Start (Seconds (1.0));
+  serverApps.Stop (Seconds (10.0));
+
+  
+  UdpEchoClientHelper echoClient (serverApps.Get(0)->GetNode()->GetDevice(0)->GetAddress(), 9);
+  echoClient.SetAttribute ("MaxPackets", UintegerValue (1));
+  echoClient.SetAttribute ("Interval", TimeValue (Seconds (1.)));
+  echoClient.SetAttribute ("PacketSize", UintegerValue (1024));
+
+  ApplicationContainer clientApps = echoClient.Install (wifiStaNodes.Get (0));
+  clientApps.Start (Seconds (2.0));
+  clientApps.Stop (Seconds (10.0));
+
+  Ipv4GlobalRoutingHelper::PopulateRoutingTables ();
+
+
 
   MobilityHelper mobility;
   mobility.SetPositionAllocator ("ns3::RandomDiscPositionAllocator", "X", StringValue ("100.0"),
@@ -120,46 +131,6 @@ main (int argc, char *argv[])
 
   mobility.SetMobilityModel ("ns3::ConstantPositionMobilityModel");
   mobility.Install (wifiApNode);
-
-  InternetStackHelper stack;
-  stack.Install (csmaNodes);
-  stack.Install (wifiApNode);
-  stack.Install (wifiStaNodes);
-
-  Ipv4AddressHelper address;
-
-  address.SetBase ("10.1.1.0", "255.255.255.0");
-  Ipv4InterfaceContainer p2pInterfaces;
-  p2pInterfaces = address.Assign (p2pDevices);
-
-  address.SetBase ("10.1.2.0", "255.255.255.0");
-  Ipv4InterfaceContainer csmaInterfaces;
-  csmaInterfaces = address.Assign (csmaDevices);
-
-  address.SetBase ("10.1.3.0", "255.255.255.0");
-  address.Assign (staDevices);
-  address.Assign (apDevices);
-
-
-  UdpEchoServerHelper echoServer (9);
-
-  ApplicationContainer serverApps = echoServer.Install (csmaNodes.Get (nCsma));
-  serverApps.Start (Seconds (1.0));
-  serverApps.Stop (Seconds (10.0));
-
-
-
-  UdpEchoClientHelper echoClient (csmaInterfaces.GetAddress (nCsma), 9);
-  echoClient.SetAttribute ("MaxPackets", UintegerValue (1));
-  echoClient.SetAttribute ("Interval", TimeValue (Seconds (1.)));
-  echoClient.SetAttribute ("PacketSize", UintegerValue (1024));
-
-  ApplicationContainer clientApps =
-    echoClient.Install (wifiStaNodes.Get (nWifi - 1));
-  clientApps.Start (Seconds (2.0));
-  clientApps.Stop (Seconds (10.0));
-
-  Ipv4GlobalRoutingHelper::PopulateRoutingTables ();
 
 
 
