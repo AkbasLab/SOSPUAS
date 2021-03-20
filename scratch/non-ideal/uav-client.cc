@@ -23,8 +23,6 @@
 
 using namespace ns3;
 
-
-
 NS_LOG_COMPONENT_DEFINE ("UAVClient");
 
 NS_OBJECT_ENSURE_REGISTERED (UAVClient);
@@ -222,9 +220,8 @@ UAVClient::SetFill (std::string fill)
   m_size = dataSize;
 }
 
-
 void
-UAVClient::SetFill (std::uint8_t* fill, std::size_t bytes)
+UAVClient::SetFill (std::uint8_t *fill, std::size_t bytes)
 {
   NS_LOG_FUNCTION (this);
 
@@ -242,8 +239,6 @@ UAVClient::SetFill (std::uint8_t* fill, std::size_t bytes)
   //
   m_size = bytes;
 }
-
-
 
 void
 UAVClient::SetFill (uint8_t fill, uint32_t dataSize)
@@ -423,10 +418,6 @@ UAVClient::HandleRead (Ptr<Socket> socket)
     }
 }
 
-
-
-
-
 UAVClientHelper::UAVClientHelper (Address address, uint16_t port)
 {
   m_factory.SetTypeId (UAVClient::GetTypeId ());
@@ -452,13 +443,11 @@ UAVClientHelper::SetFill (Ptr<Application> app, std::string fill)
   app->GetObject<UAVClient> ()->SetFill (fill);
 }
 
-
 void
-UAVClientHelper::SetFill (Ptr<Application> app, std::uint8_t* fill, std::size_t bytes)
+UAVClientHelper::SetFill (Ptr<Application> app, std::uint8_t *fill, std::size_t bytes)
 {
-	app->GetObject<UAVClient> ()->SetFill(fill, bytes);
+  app->GetObject<UAVClient> ()->SetFill (fill, bytes);
 }
-
 
 void
 UAVClientHelper::SetFill (Ptr<Application> app, uint8_t fill, uint32_t dataLength)
@@ -506,5 +495,3 @@ UAVClientHelper::InstallPriv (Ptr<Node> node) const
 
   return app;
 }
-
-
