@@ -21,6 +21,19 @@ namespace ns3 {
 
 }
 
+
+enum UAVDataType
+{
+	POSITION
+};
+
+struct UAVData
+{
+	float x, y, z;//Normal SI units
+	UAVDataType type;
+};
+
+
 class UAVServer : public Application
 {
 public:
@@ -132,6 +145,12 @@ public:
    * \param fill The string to use as the actual echo data bytes.
    */
   void SetFill (std::string fill);
+
+  /**
+   * Same as SetFill(std::string) but for raw binary data
+   */
+  void SetFill (std::uint8_t* fill, std::size_t bytes);
+
 
   /**
    * Set the data fill of the packet (what is sent as data to the server) to 
@@ -343,6 +362,7 @@ public:
    */
   void SetFill (Ptr<Application> app, std::string fill);
 
+  void SetFill (Ptr<Application> app, std::uint8_t* fill, std::size_t bytes);
   /**
    * Given a pointer to a UAVClient application, set the data fill of the 
    * packet (what is sent as data to the server) to the contents of the fill

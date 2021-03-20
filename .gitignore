@@ -38,4 +38,7 @@ build/
 /.cproject
 /.project
 
+.gdb_history
 version.cache
+peda-session-*
+

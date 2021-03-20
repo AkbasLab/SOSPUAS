@@ -19,12 +19,13 @@
 #include "ns3/socket-factory.h"
 #include "ns3/packet.h"
 #include "ns3/uinteger.h"
+#include <cstdint>
 
 using namespace ns3;
 
 
 
-NS_LOG_COMPONENT_DEFINE ("UAVClientApplication");
+NS_LOG_COMPONENT_DEFINE ("UAVClient");
 
 NS_OBJECT_ENSURE_REGISTERED (UAVClient);
 
@@ -220,6 +221,29 @@ UAVClient::SetFill (std::string fill)
   //
   m_size = dataSize;
 }
+
+
+void
+UAVClient::SetFill (std::uint8_t* fill, std::size_t bytes)
+{
+  NS_LOG_FUNCTION (this);
+
+  if (bytes != m_dataSize)
+    {
+      delete[] m_data;
+      m_data = new uint8_t[bytes];
+      m_dataSize = bytes;
+    }
+
+  memcpy (m_data, fill, bytes);
+
+  //
+  // Overwrite packet size attribute.
+  //
+  m_size = bytes;
+}
+
+
 
 void
 UAVClient::SetFill (uint8_t fill, uint32_t dataSize)
@@ -427,6 +451,14 @@ UAVClientHelper::SetFill (Ptr<Application> app, std::string fill)
 {
   app->GetObject<UAVClient> ()->SetFill (fill);
 }
+
+
+void
+UAVClientHelper::SetFill (Ptr<Application> app, std::uint8_t* fill, std::size_t bytes)
+{
+	app->GetObject<UAVClient> ()->SetFill(fill, bytes);
+}
+
 
 void
 UAVClientHelper::SetFill (Ptr<Application> app, uint8_t fill, uint32_t dataLength)

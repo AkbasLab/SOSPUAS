@@ -21,7 +21,7 @@
 
 using namespace ns3;
 
-NS_LOG_COMPONENT_DEFINE ("UAVServerApplication");
+NS_LOG_COMPONENT_DEFINE ("UAVServer");
 
 NS_OBJECT_ENSURE_REGISTERED (UAVServer);
 
