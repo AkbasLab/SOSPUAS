@@ -18,6 +18,8 @@
 #include "ns3/socket-factory.h"
 #include "ns3/packet.h"
 #include "ns3/uinteger.h"
+#include "ns3/mobility-model.h"
+#include "ns3/waypoint-mobility-model.h"
 
 using namespace ns3;
 
@@ -141,52 +143,49 @@ UAVServer::StopApplication ()
 void
 UAVServer::HandleRead (Ptr<Socket> socket)
 {
-  NS_LOG_FUNCTION (this << socket);
 
   Ptr<Packet> packet;
   Address from;
   Address localAddress;
   while ((packet = socket->RecvFrom (from)))
+  {
+    socket->GetSockName (localAddress);
+    m_rxTrace (packet);
+    m_rxTraceWithAddresses (packet, from, localAddress);
+    Ptr<WaypointMobilityModel> mobility = GetNode()->GetObject<WaypointMobilityModel>(MobilityModel::GetTypeId());
+    if (InetSocketAddress::IsMatchingType (from))
     {
-      socket->GetSockName (localAddress);
-      m_rxTrace (packet);
-      m_rxTraceWithAddresses (packet, from, localAddress);
-      if (InetSocketAddress::IsMatchingType (from))
-        {
-          NS_LOG_INFO ("At time " << Simulator::Now ().As (Time::S) << " server received "
-                                  << packet->GetSize () << " bytes from "
-                                  << InetSocketAddress::ConvertFrom (from).GetIpv4 () << " port "
-                                  << InetSocketAddress::ConvertFrom (from).GetPort ());
-        }
-      else if (Inet6SocketAddress::IsMatchingType (from))
-        {
-          NS_LOG_INFO ("At time " << Simulator::Now ().As (Time::S) << " server received "
-                                  << packet->GetSize () << " bytes from "
-                                  << Inet6SocketAddress::ConvertFrom (from).GetIpv6 () << " port "
-                                  << Inet6SocketAddress::ConvertFrom (from).GetPort ());
-        }
-
-      packet->RemoveAllPacketTags ();
-      packet->RemoveAllByteTags ();
-
-      NS_LOG_LOGIC ("Echoing packet");
-      socket->SendTo (packet, 0, from);
-
-      if (InetSocketAddress::IsMatchingType (from))
-        {
-          NS_LOG_INFO ("At time " << Simulator::Now ().As (Time::S) << " server sent "
-                                  << packet->GetSize () << " bytes to "
-                                  << InetSocketAddress::ConvertFrom (from).GetIpv4 () << " port "
-                                  << InetSocketAddress::ConvertFrom (from).GetPort ());
-        }
-      else if (Inet6SocketAddress::IsMatchingType (from))
-        {
-          NS_LOG_INFO ("At time " << Simulator::Now ().As (Time::S) << " server sent "
-                                  << packet->GetSize () << " bytes to "
-                                  << Inet6SocketAddress::ConvertFrom (from).GetIpv6 () << " port "
-                                  << Inet6SocketAddress::ConvertFrom (from).GetPort ());
-        }
+      NS_LOG_INFO ("At time " << Simulator::Now ().As (Time::S) << " server received "
+                              << packet->GetSize () << " bytes from "
+                              << InetSocketAddress::ConvertFrom (from).GetIpv4 () << " port "
+                              << InetSocketAddress::ConvertFrom (from).GetPort () << " while at ["
+                              << mobility->GetPosition().x << ", "
+                              << mobility->GetPosition().y << ", "
+                              << mobility->GetPosition().z << "]");
     }
+    else if (Inet6SocketAddress::IsMatchingType (from))
+    {
+      NS_LOG_INFO ("At time " << Simulator::Now ().As (Time::S) << " server received "
+                              << packet->GetSize () << " bytes from "
+                              << Inet6SocketAddress::ConvertFrom (from).GetIpv6 () << " port "
+                              << Inet6SocketAddress::ConvertFrom (from).GetPort () << " while at ["
+                              << mobility->GetPosition().x << ", "
+                              << mobility->GetPosition().y << ", "
+                              << mobility->GetPosition().z << "]");
+    }
+
+    packet->RemoveAllPacketTags ();
+    packet->RemoveAllByteTags ();
+
+    socket->SendTo (packet, 0, from);
+
+    UAVData data;
+    packet->CopyData(reinterpret_cast<std::uint8_t*>(&data), sizeof(data));
+    if (data.type == UAVDataType::POSITION && mobility) {
+      mobility->AddWaypoint(Waypoint(Simulator::Now() + Seconds(35), Vector(data.x, data.y, data.z)));
+ 
+    }
+  }
 }
 
 UAVServerHelper::UAVServerHelper (uint16_t port)

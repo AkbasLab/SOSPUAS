@@ -24,6 +24,7 @@
 #include "ns3/internet-module.h"
 #include "ns3/mobility-helper.h"
 #include "ns3/mobility-model.h"
+#include "ns3/waypoint-mobility-model.h"
 #include "ns3/rectangle.h"
 #include "ns3/yans-wifi-helper.h"
 #include "ns3/ipv4-address-helper.h"
@@ -102,8 +103,6 @@ main (int argc, char *argv[])
   NetDeviceContainer devices = wifi.Install (wifiPhy, wifiMac, nodes);
 
 
-
-
   NS_LOG_INFO ("Setup ip stack");
   InternetStackHelper internet;
   internet.Install (nodes);
@@ -130,7 +129,7 @@ main (int argc, char *argv[])
   //
   uint32_t MaxPacketSize = 1024;
   Time interPacketInterval = Seconds (0.05);
-  uint32_t maxPacketCount = 1;
+  uint32_t maxPacketCount = 5;
 
   UAVClientHelper client (serverAddress, port);
   client.SetAttribute ("MaxPackets", UintegerValue (maxPacketCount));
@@ -141,16 +140,15 @@ main (int argc, char *argv[])
   MobilityHelper mobility;
 
   mobility.SetPositionAllocator ("ns3::GridPositionAllocator", "MinX", DoubleValue (0.0), "MinY",
-                                 DoubleValue (0.0), "DeltaX", DoubleValue (5.0), "DeltaY",
+                                 DoubleValue (0.0), "DeltaX", DoubleValue (50.0), "DeltaY",
                                  DoubleValue (10.0), "GridWidth", UintegerValue (3), "LayoutType",
                                  StringValue ("RowFirst"));
 
-  mobility.SetMobilityModel ("ns3::RandomWalk2dMobilityModel", "Bounds",
-                             RectangleValue (Rectangle (-50, 50, -50, 50)));
+  mobility.SetMobilityModel ("ns3::WaypointMobilityModel");
 
   mobility.Install (nodes);
   Config::Connect ("/NodeList/*/$ns3::MobilityModel/CourseChange", MakeCallback (&CourseChange));
-
+  nodes.Get(0)->GetObject<ns3::WaypointMobilityModel>(MobilityModel::GetTypeId())->AddWaypoint(Waypoint(Seconds(6), Vector(10, 10, 10)));
 
   UAVData packet;
   packet.x = 1.0f;
