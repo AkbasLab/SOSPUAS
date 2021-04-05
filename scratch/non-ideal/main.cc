@@ -144,7 +144,7 @@ main (int argc, char *argv[])
                                  DoubleValue (10.0), "GridWidth", UintegerValue (3), "LayoutType",
                                  StringValue ("RowFirst"));
 
-  mobility.SetMobilityModel ("ns3::WaypointMobilityModel");
+  mobility.SetMobilityModel ("ns3::WaypointMobilityModel", "InitialPositionIsWaypoint", BooleanValue(true));
 
   mobility.Install (nodes);
   Config::Connect ("/NodeList/*/$ns3::MobilityModel/CourseChange", MakeCallback (&CourseChange));
