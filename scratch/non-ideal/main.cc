@@ -129,7 +129,7 @@ main (int argc, char *argv[])
   //
   uint32_t MaxPacketSize = 1024;
   Time interPacketInterval = Seconds (0.05);
-  uint32_t maxPacketCount = 5;
+  uint32_t maxPacketCount = 50;
 
   UAVClientHelper client (serverAddress, port);
   client.SetAttribute ("MaxPackets", UintegerValue (maxPacketCount));
@@ -164,6 +164,9 @@ main (int argc, char *argv[])
   // Now, do the actual simulation.
   // Limit to 15 seconds
   Simulator::Stop (Seconds (15));
+
+  AsciiTraceHelper ascii;
+  wifiPhy.EnablePcap("UAV", nodes);
 
   NS_LOG_INFO ("Run Simulation.");
   Simulator::Run ();
