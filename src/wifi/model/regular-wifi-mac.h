@@ -27,11 +27,13 @@
 
 namespace ns3 {
 
-class MacLow;
 class MacRxMiddle;
 class MacTxMiddle;
 class ChannelAccessManager;
 class ExtendedCapabilities;
+class FrameExchangeManager;
+class WifiPsdu;
+enum WifiTxTimerReason : uint8_t;
 
 /**
  * \brief base class for all MAC-level wifi objects.
@@ -88,6 +90,13 @@ public:
   virtual void Enqueue (Ptr<Packet> packet, Mac48Address to) = 0;
 
   /**
+   * Get the Frame Exchange Manager
+   *
+   * \return the Frame Exchange Manager
+   */
+  Ptr<FrameExchangeManager> GetFrameExchangeManager (void) const;
+
+  /**
    * Enable or disable CTS-to-self feature.
    *
    * \param enable true if CTS-to-self is to be supported,
@@ -103,6 +112,28 @@ public:
    * \return the station manager attached to this MAC.
    */
   Ptr<WifiRemoteStationManager> GetWifiRemoteStationManager (void) const;
+
+  /**
+   * Accessor for the DCF object
+   *
+   * \return a smart pointer to Txop
+   */
+  Ptr<Txop> GetTxop (void) const;
+  /**
+   * Accessor for a specified EDCA object
+   *
+   * \param ac the Access Category
+   * \return a smart pointer to a QosTxop
+   */
+  Ptr<QosTxop> GetQosTxop (AcIndex ac) const;
+  /**
+   * Accessor for a specified EDCA object
+   *
+   * \param tid the Traffic ID
+   * \return a smart pointer to a QosTxop
+   */
+  Ptr<QosTxop> GetQosTxop (uint8_t tid) const;
+
   /**
    * Return the extended capabilities of the device.
    *
@@ -132,11 +163,11 @@ protected:
   virtual void DoInitialize ();
   virtual void DoDispose ();
 
-  Ptr<MacRxMiddle> m_rxMiddle;  //!< RX middle (defragmentation etc.)
-  Ptr<MacTxMiddle> m_txMiddle;  //!< TX middle (aggregation etc.)
-  Ptr<MacLow> m_low;            //!< MacLow (RTS, CTS, Data, Ack etc.)
+  Ptr<MacRxMiddle> m_rxMiddle;                      //!< RX middle (defragmentation etc.)
+  Ptr<MacTxMiddle> m_txMiddle;                      //!< TX middle (aggregation etc.)
   Ptr<ChannelAccessManager> m_channelAccessManager; //!< channel access manager
-  Ptr<WifiPhy> m_phy;           //!< Wifi PHY
+  Ptr<WifiPhy> m_phy;                               //!< Wifi PHY
+  Ptr<FrameExchangeManager> m_feManager;            //!< Frame Exchange Manager
 
   Ptr<WifiRemoteStationManager> m_stationManager; //!< Remote station manager (rate control, RTS/CTS/fragmentation thresholds etc.)
 
@@ -157,13 +188,6 @@ protected:
   /** This is a map from Access Category index to the corresponding
   channel access function */
   EdcaQueues m_edca;
-
-  /**
-   * Accessor for the DCF object
-   *
-   * \return a smart pointer to Txop
-   */
-  Ptr<Txop> GetTxop (void) const;
 
   /**
    * Accessor for the AC_VO channel access function
@@ -223,20 +247,6 @@ protected:
    * \param mpdu the MPDU that has been received.
    */
   virtual void Receive (Ptr<WifiMacQueueItem> mpdu);
-  /**
-   * The packet we sent was successfully received by the receiver
-   * (i.e. we received an Ack from the receiver).
-   *
-   * \param hdr the header of the packet that we successfully sent
-   */
-  virtual void TxOk (const WifiMacHeader &hdr);
-  /**
-   * The packet we sent was successfully received by the receiver
-   * (i.e. we did not receive an Ack from the receiver).
-   *
-   * \param hdr the header of the packet that we failed to sent
-   */
-  virtual void TxFailed (const WifiMacHeader &hdr);
 
   /**
    * Forward the packet up to the device.
@@ -277,6 +287,12 @@ protected:
    * \return true if QoS is supported, false otherwise
    */
   bool GetQosSupported () const;
+
+  /**
+   * Create a Frame Exchange Manager depending on the supported version
+   * of the standard.
+   */
+  void SetupFrameExchangeManager (void);
 
   /**
    * Return whether the device supports HT.
@@ -419,10 +435,8 @@ private:
    */
   bool m_dsssSupported;
 
-  /// Enable aggregation function
-  void EnableAggregation (void);
-  /// Disable aggregation function
-  void DisableAggregation (void);
+  Mac48Address m_address;   ///< MAC address of this station
+  Mac48Address m_bssid;     ///< the BSSID
 
   uint16_t m_voMaxAmsduSize; ///< maximum A-MSDU size for AC_VO (in bytes)
   uint16_t m_viMaxAmsduSize; ///< maximum A-MSDU size for AC_VI (in bytes)
@@ -437,7 +451,68 @@ private:
   TracedCallback<const WifiMacHeader &> m_txOkCallback; ///< transmit OK callback
   TracedCallback<const WifiMacHeader &> m_txErrCallback; ///< transmit error callback
 
+  /// TracedCallback for acked/nacked MPDUs typedef
+  typedef TracedCallback<Ptr<const WifiMacQueueItem>> MpduTracedCallback;
+
+  MpduTracedCallback m_ackedMpduCallback;  ///< ack'ed MPDU callback
+  MpduTracedCallback m_nackedMpduCallback; ///< nack'ed MPDU callback
+
+  /**
+   * TracedCallback signature for MPDU drop events.
+   *
+   * \param reason the reason why the MPDU was dropped (\see WifiMacDropReason)
+   * \param mpdu the dropped MPDU
+   */
+  typedef void (* DroppedMpduCallback)(WifiMacDropReason reason, Ptr<const WifiMacQueueItem> mpdu);
+
+  /// TracedCallback for MPDU drop events typedef
+  typedef TracedCallback<WifiMacDropReason, Ptr<const WifiMacQueueItem>> DroppedMpduTracedCallback;
+
+  /**
+   * This trace indicates that an MPDU was dropped for the given reason.
+   */
+  DroppedMpduTracedCallback m_droppedMpduCallback;
+
+  /**
+   * TracedCallback signature for MPDU response timeout events.
+   *
+   * \param reason the reason why the timer was started
+   * \param mpdu the MPDU whose response was not received before the timeout
+   * \param txVector the TXVECTOR used to transmit the MPDU
+   */
+  typedef void (* MpduResponseTimeoutCallback)(uint8_t reason, Ptr<const WifiMacQueueItem> mpdu,
+                                               const WifiTxVector& txVector);
+
+  /// TracedCallback for MPDU response timeout events typedef
+  typedef TracedCallback<uint8_t, Ptr<const WifiMacQueueItem>, const WifiTxVector&> MpduResponseTimeoutTracedCallback;
+
+  /**
+   * MPDU response timeout traced callback.
+   * This trace source is fed by a WifiTxTimer object.
+   */
+  MpduResponseTimeoutTracedCallback m_mpduResponseTimeoutCallback;
+
+  /**
+   * TracedCallback signature for PSDU response timeout events.
+   *
+   * \param reason the reason why the timer was started
+   * \param psdu the PSDU whose response was not received before the timeout
+   * \param txVector the TXVECTOR used to transmit the PSDU
+   */
+  typedef void (* PsduResponseTimeoutCallback)(uint8_t reason, Ptr<const WifiPsdu> psdu,
+                                               const WifiTxVector& txVector);
+
+  /// TracedCallback for PSDU response timeout events typedef
+  typedef TracedCallback<uint8_t, Ptr<const WifiPsdu>, const WifiTxVector&> PsduResponseTimeoutTracedCallback;
+
+  /**
+   * PSDU response timeout traced callback.
+   * This trace source is fed by a WifiTxTimer object.
+   */
+  PsduResponseTimeoutTracedCallback m_psduResponseTimeoutCallback;
+
   bool m_shortSlotTimeSupported; ///< flag whether short slot time is supported
+  bool m_ctsToSelfSupported;     ///< flag indicating whether CTS-To-Self is supported
 };
 
 } //namespace ns3

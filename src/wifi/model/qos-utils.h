@@ -28,6 +28,25 @@ namespace ns3 {
 class Packet;
 class WifiMacHeader;
 class QueueItem;
+class Mac48Address;
+
+typedef std::pair<Mac48Address, uint8_t> WifiAddressTidPair;  //!< (MAC address, TID) pair
+
+/**
+ * Function object to compute the hash of a (MAC address, TID) pair
+ */
+struct WifiAddressTidHash
+{
+  std::size_t operator() (const WifiAddressTidPair& addressTidPair) const;
+};
+
+/**
+ * Function object to compute the hash of a MAC address
+ */
+struct WifiAddressHash
+{
+  std::size_t operator() (const Mac48Address& address) const;
+};
 
 /**
  * \ingroup wifi
@@ -35,7 +54,7 @@ class QueueItem;
  * with values corresponding to the AC index (ACI) values specified
  * (Table 8-104 "ACI-to-AC coding"; IEEE 802.11-2012).
  */
-enum AcIndex
+enum AcIndex : uint8_t
 {
   /** Best Effort */
   AC_BE = 0,
