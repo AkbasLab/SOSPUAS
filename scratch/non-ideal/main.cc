@@ -104,7 +104,6 @@ main (int argc, char *argv[])
   wifiMac.SetType ("ns3::AdhocWifiMac");
   NetDeviceContainer devices = wifi.Install (wifiPhy, wifiMac, nodes);
 
-
   NS_LOG_INFO ("Setup ip stack");
   InternetStackHelper internet;
   internet.Install (nodes);
@@ -122,6 +121,7 @@ main (int argc, char *argv[])
 
   UAVHelper central (port, UAVDataType::VIRTUAL_FORCES_CENTRAL_POSITION, serverAddress);
   central.SetAttribute ("Interval", TimeValue (interPacketInterval));
+  central.SetAttribute ("UavCount", UintegerValue(1 + peripheralNodes));
 
   ApplicationContainer apps = central.Install (nodes.Get (0));
   apps.Start (Seconds (1.0));
@@ -130,6 +130,7 @@ main (int argc, char *argv[])
 
   UAVHelper client (port, UAVDataType::VIRTUAL_FORCES_POSITION, serverAddress);
   client.SetAttribute ("Interval", TimeValue (interPacketInterval));
+  central.SetAttribute ("UavCount", UintegerValue(1 + peripheralNodes));
   for (uint32_t i = 1; i < nodes.GetN(); i++)
   {
     apps = client.Install (nodes.Get (i));

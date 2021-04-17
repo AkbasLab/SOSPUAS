@@ -10,6 +10,7 @@
 #include "ns3/event-id.h"
 #include "ns3/ipv4-address.h"
 #include "ns3/ipv6-address.h"
+#include "ns3/uinteger.h"
 #include "ns3/ptr.h"
 #include "ns3/address.h"
 #include "ns3/traced-callback.h"
@@ -68,11 +69,11 @@ private:
   UAVDataType m_virtualType;
   Ipv4Address m_serverAddress;
   Time m_interval;
+  uint32_t m_uavCount;
   
   uint16_t m_port; //!< Port on which we listen for incoming packets.
   Ptr<Socket> m_socket; //!< IPv4 Socket
-  Ptr<Socket> m_socket6; //!< IPv6 Socket
-  Address m_local; //!< local multicast address
+  Ipv4Address m_local; //!< local multicast address
 
   /// Callbacks for tracing the packet Rx events
   TracedCallback<Ptr<const Packet>> m_rxTrace;

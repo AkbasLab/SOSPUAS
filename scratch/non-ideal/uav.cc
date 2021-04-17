@@ -7,11 +7,9 @@
 #include "ns3/names.h"
 #include "ns3/log.h"
 #include "ns3/ipv4-address.h"
-#include "ns3/ipv6-address.h"
 #include "ns3/address-utils.h"
 #include "ns3/nstime.h"
 #include "ns3/inet-socket-address.h"
-#include "ns3/inet6-socket-address.h"
 #include "ns3/socket.h"
 #include "ns3/udp-socket.h"
 #include "ns3/simulator.h"
@@ -49,7 +47,10 @@ UAV::GetTypeId (void)
                            MakeIpv4AddressChecker())
           .AddAttribute("Interval", "", TimeValue(Seconds(1)),
                            MakeTimeAccessor(&UAV::m_interval),
-                           MakeTimeChecker());
+                           MakeTimeChecker())
+          .AddAttribute ("UavCount", "The number of UAV's in the simulation. Used for finding ip addresses. Always >= 2 because of the central node + 1 client node", UintegerValue (2),
+                         MakeUintegerAccessor (&UAV::m_uavCount),
+                         MakeUintegerChecker<uint32_t> ());
 
   return tid;
 }
@@ -63,7 +64,6 @@ UAV::~UAV ()
 {
   NS_LOG_FUNCTION (this);
   m_socket = 0;
-  m_socket6 = 0;
 }
 
 void
@@ -102,32 +102,7 @@ UAV::StartApplication (void)
         }
     }
 
-  if (m_socket6 == 0)
-    {
-      TypeId tid = TypeId::LookupByName ("ns3::UdpSocketFactory");
-      m_socket6 = Socket::CreateSocket (GetNode (), tid);
-      Inet6SocketAddress local6 = Inet6SocketAddress (Ipv6Address::GetAny (), m_port);
-      if (m_socket6->Bind (local6) == -1)
-        {
-          NS_FATAL_ERROR ("Failed to bind socket");
-        }
-      if (addressUtils::IsMulticast (local6))
-        {
-          Ptr<UdpSocket> udpSocket = DynamicCast<UdpSocket> (m_socket6);
-          if (udpSocket)
-            {
-              // equivalent to setsockopt (MCAST_JOIN_GROUP)
-              udpSocket->MulticastJoinGroup (0, local6);
-            }
-          else
-            {
-              NS_FATAL_ERROR ("Error: Failed to join multicast group");
-            }
-        }
-    }
-
   m_socket->SetRecvCallback (MakeCallback (&UAV::HandleRead, this));
-  m_socket6->SetRecvCallback (MakeCallback (&UAV::HandleRead, this));
 }
 
 void
@@ -139,11 +114,6 @@ UAV::StopApplication ()
     {
       m_socket->Close ();
       m_socket->SetRecvCallback (MakeNullCallback<void, Ptr<Socket>> ());
-    }
-  if (m_socket6 != 0)
-    {
-      m_socket6->Close ();
-      m_socket6->SetRecvCallback (MakeNullCallback<void, Ptr<Socket>> ());
     }
 }
 
@@ -170,17 +140,6 @@ UAV::HandleRead (Ptr<Socket> socket)
                               << mobility->GetPosition().y << ", "
                               << mobility->GetPosition().z << "]");
     }
-    else if (Inet6SocketAddress::IsMatchingType (from))
-    {
-      NS_LOG_INFO ("At time " << Simulator::Now ().As (Time::S) << " server received "
-                              << packet->GetSize () << " bytes from "
-                              << Inet6SocketAddress::ConvertFrom (from).GetIpv6 () << " port "
-                              << Inet6SocketAddress::ConvertFrom (from).GetPort () << " while at ["
-                              << mobility->GetPosition().x << ", "
-                              << mobility->GetPosition().y << ", "
-                              << mobility->GetPosition().z << "]");
-    }
-
     packet->RemoveAllPacketTags ();
     packet->RemoveAllByteTags ();
 
