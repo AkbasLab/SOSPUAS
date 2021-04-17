@@ -22,17 +22,17 @@ namespace ns3 {
 
 }
 
-
-enum UAVDataType
+using UAVDataType_ = uint8_t;
+namespace UAVDataType
 {
-	VIRTUAL_FORCES_POSITION,
-	VIRTUAL_FORCES_CENTRAL_POSITION,
+	constexpr UAVDataType_ VIRTUAL_FORCES_POSITION = 0;
+	constexpr UAVDataType_ VIRTUAL_FORCES_CENTRAL_POSITION = 1;
 };
 
 struct UAVData
 {
 	float x, y, z;//Normal SI units
-	UAVDataType type;
+	UAVDataType_ type;
 };
 
 class UAV : public Application
@@ -46,12 +46,19 @@ public:
   UAV ();
   virtual ~UAV ();
 
-  virtual UAVDataType GetUAVType() { return UAVDataType::VIRTUAL_FORCES_CENTRAL_POSITION; }
+  virtual UAVDataType_ GetUAVType() { return UAVDataType::VIRTUAL_FORCES_CENTRAL_POSITION; }
 
 protected:
   virtual void DoDispose (void);
 
   void BroadcastPosition();
+  void Send();
+
+    /**
+   * \brief Schedule the next packet transmission
+   * \param dt time interval between packets.
+   */
+  void ScheduleTransmit (Time dt);
 
 private:
   virtual void StartApplication (void);
@@ -66,10 +73,13 @@ private:
    */
   void HandleRead (Ptr<Socket> socket);
 
-  UAVDataType m_virtualType;
-  Ipv4Address m_serverAddress;
+  UAVDataType_ m_uavType;
   Time m_interval;
   uint32_t m_uavCount;
+  Ipv4Address m_serverAddress;
+
+  uint32_t m_sent;
+  EventId m_sendEvent;
   
   uint16_t m_port; //!< Port on which we listen for incoming packets.
   Ptr<Socket> m_socket; //!< IPv4 Socket
@@ -101,7 +111,7 @@ public:
    *
    * \param port The port the server will wait on for incoming packets
    */
-  UAVHelper (uint16_t port, UAVDataType type, Ipv4Address serverAddress);
+  UAVHelper (Ipv4Address serverAddress, uint16_t port, UAVDataType_ type, Time interPacketInterval, uint32_t uavCount);
 
   /**
    * Record an attribute to be set in each Application after it is is created.

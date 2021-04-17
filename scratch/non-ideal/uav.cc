@@ -50,7 +50,12 @@ UAV::GetTypeId (void)
                            MakeTimeChecker())
           .AddAttribute ("UavCount", "The number of UAV's in the simulation. Used for finding ip addresses. Always >= 2 because of the central node + 1 client node", UintegerValue (2),
                          MakeUintegerAccessor (&UAV::m_uavCount),
-                         MakeUintegerChecker<uint32_t> ());
+                         MakeUintegerChecker<uint32_t> ())
+          .AddAttribute ("UavType", "What type this uav is", UintegerValue (2),
+                         MakeUintegerAccessor (&UAV::m_uavType),
+                         MakeUintegerChecker<UAVDataType_> ())
+
+          ;
 
   return tid;
 }
@@ -103,6 +108,9 @@ UAV::StartApplication (void)
     }
 
   m_socket->SetRecvCallback (MakeCallback (&UAV::HandleRead, this));
+  m_socket->SetAllowBroadcast(true);
+
+  ScheduleTransmit(Seconds(0.0));
 }
 
 void
@@ -146,11 +154,59 @@ UAV::HandleRead (Ptr<Socket> socket)
   }
 }
 
-UAVHelper::UAVHelper (uint16_t port, UAVDataType type, Ipv4Address serverAddress)
+
+void
+UAV::ScheduleTransmit (Time dt)
+{
+  NS_LOG_FUNCTION (this << dt);
+  m_sendEvent = Simulator::Schedule (dt, &UAV::Send, this);
+}
+
+void
+UAV::Send (void)
+{
+  NS_LOG_FUNCTION (this);
+
+  NS_ASSERT (m_sendEvent.IsExpired ());
+
+  UAVData payload;
+  payload.x = 0;
+  payload.y = 0;
+  payload.z = 0;
+  payload.type = m_uavType;
+
+  Address localAddress;
+  m_socket->GetSockName (localAddress);
+  // call to the trace sinks before the packet is actually sent,
+  // so that tags added to the packet can be sent as well
+  NS_LOG_FUNCTION("Self is " << Ipv4Address(localAddress)); 
+  for (uint32_t i = 0; i < m_uavCount; i++) {
+    Ipv4Address currentPeer(m_serverAddress.Get() + i);
+
+    if (Address(currentPeer) == localAddress) {
+      //Don't send packets to ourselves
+      continue;
+    }
+    NS_LOG_FUNCTION("Sending packet to " << currentPeer); 
+    m_socket->SendTo(reinterpret_cast<uint8_t*>(&payload), sizeof(payload), 0, Address(currentPeer));
+    m_sent++;
+
+  }
+  ScheduleTransmit (m_interval);
+}
+
+
+// ========== Helper stuff ==========
+
+
+UAVHelper::UAVHelper (Ipv4Address serverAddress, uint16_t port, UAVDataType_ type, Time interPacketInterval, uint32_t uavCount)
 {
   m_factory.SetTypeId (UAV::GetTypeId ());
-  SetAttribute ("Port", UintegerValue (port));
   SetAttribute("ServerAddress", Ipv4AddressValue(serverAddress));
+  SetAttribute ("Port", UintegerValue (port));
+  SetAttribute("Interval", TimeValue(interPacketInterval));
+  SetAttribute("UavCount", UintegerValue(uavCount));
+  SetAttribute("UavType", UintegerValue(type));
 }
 
 void

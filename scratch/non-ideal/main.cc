@@ -119,18 +119,14 @@ main (int argc, char *argv[])
   Time interPacketInterval = Seconds (0.05);
   uint16_t port = 4000;
 
-  UAVHelper central (port, UAVDataType::VIRTUAL_FORCES_CENTRAL_POSITION, serverAddress);
-  central.SetAttribute ("Interval", TimeValue (interPacketInterval));
-  central.SetAttribute ("UavCount", UintegerValue(1 + peripheralNodes));
+  UAVHelper central (serverAddress, port, UAVDataType::VIRTUAL_FORCES_CENTRAL_POSITION, interPacketInterval, 1 + peripheralNodes);
 
   ApplicationContainer apps = central.Install (nodes.Get (0));
   apps.Start (Seconds (1.0));
   apps.Stop (Seconds (100.0));
 
 
-  UAVHelper client (port, UAVDataType::VIRTUAL_FORCES_POSITION, serverAddress);
-  client.SetAttribute ("Interval", TimeValue (interPacketInterval));
-  central.SetAttribute ("UavCount", UintegerValue(1 + peripheralNodes));
+  UAVHelper client (serverAddress, port, UAVDataType::VIRTUAL_FORCES_POSITION, interPacketInterval, 1 + peripheralNodes);
   for (uint32_t i = 1; i < nodes.GetN(); i++)
   {
     apps = client.Install (nodes.Get (i));
