@@ -1,4 +1,4 @@
-#include "uav-apps.h"
+#include "uav.h"
 #include "ns3/udp-server.h"
 #include "ns3/udp-client.h"
 #include "ns3/udp-trace-client.h"
@@ -23,36 +23,43 @@
 
 using namespace ns3;
 
-NS_LOG_COMPONENT_DEFINE ("UAVServer");
+NS_LOG_COMPONENT_DEFINE ("UAV");
 
-NS_OBJECT_ENSURE_REGISTERED (UAVServer);
+NS_OBJECT_ENSURE_REGISTERED (UAV);
 
 TypeId
-UAVServer::GetTypeId (void)
+UAV::GetTypeId (void)
 {
   static TypeId tid =
-      TypeId ("UAVServer")
+      TypeId ("HASH_POWS")
           .SetParent<Application> ()
           .SetGroupName ("Applications")
-          .AddConstructor<UAVServer> ()
+          .AddConstructor<UAV> ()
           .AddAttribute ("Port", "Port on which we listen for incoming packets.", UintegerValue (9),
-                         MakeUintegerAccessor (&UAVServer::m_port),
+                         MakeUintegerAccessor (&UAV::m_port),
                          MakeUintegerChecker<uint16_t> ())
           .AddTraceSource ("Rx", "A packet has been received",
-                           MakeTraceSourceAccessor (&UAVServer::m_rxTrace),
+                           MakeTraceSourceAccessor (&UAV::m_rxTrace),
                            "ns3::Packet::TracedCallback")
           .AddTraceSource ("RxWithAddresses", "A packet has been received",
-                           MakeTraceSourceAccessor (&UAVServer::m_rxTraceWithAddresses),
-                           "ns3::Packet::TwoAddressTracedCallback");
+                           MakeTraceSourceAccessor (&UAV::m_rxTraceWithAddresses),
+                           "ns3::Packet::TwoAddressTracedCallback")
+          .AddAttribute ("ServerAddress", "The address of the central server node", Ipv4AddressValue(Ipv4Address((uint32_t) 0)),
+                           MakeIpv4AddressAccessor(&UAV::m_serverAddress),
+                           MakeIpv4AddressChecker())
+          .AddAttribute("Interval", "", TimeValue(Seconds(1)),
+                           MakeTimeAccessor(&UAV::m_interval),
+                           MakeTimeChecker());
+
   return tid;
 }
 
-UAVServer::UAVServer ()
+UAV::UAV ()
 {
   NS_LOG_FUNCTION (this);
 }
 
-UAVServer::~UAVServer ()
+UAV::~UAV ()
 {
   NS_LOG_FUNCTION (this);
   m_socket = 0;
@@ -60,14 +67,14 @@ UAVServer::~UAVServer ()
 }
 
 void
-UAVServer::DoDispose (void)
+UAV::DoDispose (void)
 {
   NS_LOG_FUNCTION (this);
   Application::DoDispose ();
 }
 
 void
-UAVServer::StartApplication (void)
+UAV::StartApplication (void)
 {
   NS_LOG_FUNCTION (this);
 
@@ -119,12 +126,12 @@ UAVServer::StartApplication (void)
         }
     }
 
-  m_socket->SetRecvCallback (MakeCallback (&UAVServer::HandleRead, this));
-  m_socket6->SetRecvCallback (MakeCallback (&UAVServer::HandleRead, this));
+  m_socket->SetRecvCallback (MakeCallback (&UAV::HandleRead, this));
+  m_socket6->SetRecvCallback (MakeCallback (&UAV::HandleRead, this));
 }
 
 void
-UAVServer::StopApplication ()
+UAV::StopApplication ()
 {
   NS_LOG_FUNCTION (this);
 
@@ -141,7 +148,7 @@ UAVServer::StopApplication ()
 }
 
 void
-UAVServer::HandleRead (Ptr<Socket> socket)
+UAV::HandleRead (Ptr<Socket> socket)
 {
 
   Ptr<Packet> packet;
@@ -177,44 +184,37 @@ UAVServer::HandleRead (Ptr<Socket> socket)
     packet->RemoveAllPacketTags ();
     packet->RemoveAllByteTags ();
 
-    socket->SendTo (packet, 0, from);
-
-    UAVData data;
-    packet->CopyData(reinterpret_cast<std::uint8_t*>(&data), sizeof(data));
-    if (data.type == UAVDataType::POSITION && mobility) {
-      mobility->AddWaypoint(Waypoint(Simulator::Now() + Seconds(35), Vector(data.x, data.y, data.z)));
- 
-    }
   }
 }
 
-UAVServerHelper::UAVServerHelper (uint16_t port)
+UAVHelper::UAVHelper (uint16_t port, UAVDataType type, Ipv4Address serverAddress)
 {
-  m_factory.SetTypeId (UAVServer::GetTypeId ());
+  m_factory.SetTypeId (UAV::GetTypeId ());
   SetAttribute ("Port", UintegerValue (port));
+  SetAttribute("ServerAddress", Ipv4AddressValue(serverAddress));
 }
 
 void
-UAVServerHelper::SetAttribute (std::string name, const AttributeValue &value)
+UAVHelper::SetAttribute (std::string name, const AttributeValue &value)
 {
   m_factory.Set (name, value);
 }
 
 ApplicationContainer
-UAVServerHelper::Install (Ptr<Node> node) const
+UAVHelper::Install (Ptr<Node> node) const
 {
   return ApplicationContainer (InstallPriv (node));
 }
 
 ApplicationContainer
-UAVServerHelper::Install (std::string nodeName) const
+UAVHelper::Install (std::string nodeName) const
 {
   Ptr<Node> node = Names::Find<Node> (nodeName);
   return ApplicationContainer (InstallPriv (node));
 }
 
 ApplicationContainer
-UAVServerHelper::Install (NodeContainer c) const
+UAVHelper::Install (NodeContainer c) const
 {
   ApplicationContainer apps;
   for (NodeContainer::Iterator i = c.Begin (); i != c.End (); ++i)
@@ -226,9 +226,9 @@ UAVServerHelper::Install (NodeContainer c) const
 }
 
 Ptr<Application>
-UAVServerHelper::InstallPriv (Ptr<Node> node) const
+UAVHelper::InstallPriv (Ptr<Node> node) const
 {
-  Ptr<Application> app = m_factory.Create<UAVServer> ();
+  Ptr<Application> app = m_factory.Create<UAV> ();
   node->AddApplication (app);
 
   return app;

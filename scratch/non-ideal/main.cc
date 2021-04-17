@@ -31,7 +31,7 @@
 #include "ns3/yans-wifi-channel.h"
 #include "ns3/internet-stack-helper.h"
 
-#include "uav-apps.h"
+#include "uav.h"
 
 using namespace ns3;
 
@@ -58,12 +58,14 @@ main (int argc, char *argv[])
   CommandLine cmd (__FILE__);
   cmd.Parse (argc, argv);
 
+  uint32_t peripheralNodes = 10;
+
   //
   // Explicitly create the nodes required by the topology (shown above).
   //
   NS_LOG_INFO ("Create nodes.");
   NodeContainer nodes;
-  nodes.Create (2);
+  nodes.Create (1 + peripheralNodes);
 
   NS_LOG_INFO ("Create channels.");
 
@@ -111,37 +113,33 @@ main (int argc, char *argv[])
   Ipv4AddressHelper ipv4;
   ipv4.SetBase ("10.1.1.0", "255.255.255.0");
   Ipv4InterfaceContainer assignedAddresses = ipv4.Assign (devices);
-  Address serverAddress = Address (assignedAddresses.GetAddress (1));
+  auto serverAddress = assignedAddresses.GetAddress (0);
 
   NS_LOG_INFO ("Create Applications.");
-  //
-  // Create one udpServer applications on node one.
-  //
-  uint16_t port = 4000;
-  UAVServerHelper server (port);
-  ApplicationContainer apps = server.Install (nodes.Get (1));
-  apps.Start (Seconds (1.0));
-  apps.Stop (Seconds (10.0));
-
-  //
-  // Create one UdpClient application to send UDP datagrams from node zero to
-  // node one.
-  //
-  uint32_t MaxPacketSize = 1024;
+  
   Time interPacketInterval = Seconds (0.05);
-  uint32_t maxPacketCount = 50;
+  uint16_t port = 4000;
 
-  UAVClientHelper client (serverAddress, port);
-  client.SetAttribute ("MaxPackets", UintegerValue (maxPacketCount));
+  UAVHelper central (port, UAVDataType::VIRTUAL_FORCES_CENTRAL_POSITION, serverAddress);
+  central.SetAttribute ("Interval", TimeValue (interPacketInterval));
+
+  ApplicationContainer apps = central.Install (nodes.Get (0));
+  apps.Start (Seconds (1.0));
+  apps.Stop (Seconds (100.0));
+
+
+  UAVHelper client (port, UAVDataType::VIRTUAL_FORCES_POSITION, serverAddress);
   client.SetAttribute ("Interval", TimeValue (interPacketInterval));
-  client.SetAttribute ("PacketSize", UintegerValue (MaxPacketSize));
-  apps = client.Install (nodes.Get (0));
+  for (uint32_t i = 1; i < nodes.GetN(); i++)
+  {
+    apps = client.Install (nodes.Get (i));
+  }
 
   MobilityHelper mobility;
 
   mobility.SetPositionAllocator ("ns3::GridPositionAllocator", "MinX", DoubleValue (0.0), "MinY",
-                                 DoubleValue (0.0), "DeltaX", DoubleValue (50.0), "DeltaY",
-                                 DoubleValue (10.0), "GridWidth", UintegerValue (3), "LayoutType",
+                                 DoubleValue (0.0), "DeltaX", DoubleValue (1.0), "DeltaY",
+                                 DoubleValue (1.0), "GridWidth", UintegerValue (3), "LayoutType",
                                  StringValue ("RowFirst"));
 
   mobility.SetMobilityModel ("ns3::WaypointMobilityModel", "InitialPositionIsWaypoint", BooleanValue(true));
@@ -150,13 +148,6 @@ main (int argc, char *argv[])
   Config::Connect ("/NodeList/*/$ns3::MobilityModel/CourseChange", MakeCallback (&CourseChange));
   nodes.Get(0)->GetObject<ns3::WaypointMobilityModel>(MobilityModel::GetTypeId())->AddWaypoint(Waypoint(Seconds(6), Vector(10, 10, 10)));
 
-  UAVData packet;
-  packet.x = 1.0f;
-  packet.y = 0.0f;
-  packet.z = -175.0f;
-  packet.type = UAVDataType::POSITION;
-
-  client.SetFill (apps.Get (0), reinterpret_cast<std::uint8_t *> (&packet), sizeof (packet));
   apps.Start (Seconds (2.0));
   apps.Stop (Seconds (9.0));
 
