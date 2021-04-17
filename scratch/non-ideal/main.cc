@@ -35,7 +35,7 @@
 
 using namespace ns3;
 
-NS_LOG_COMPONENT_DEFINE ("UAV-APPS");
+NS_LOG_COMPONENT_DEFINE ("UAV-MAIN");
 
 static void
 CourseChange (std::string foo, Ptr<const MobilityModel> mobility)
@@ -58,7 +58,7 @@ main (int argc, char *argv[])
   CommandLine cmd (__FILE__);
   cmd.Parse (argc, argv);
 
-  uint32_t peripheralNodes = 10;
+  uint32_t peripheralNodes = 2;
 
   //
   // Explicitly create the nodes required by the topology (shown above).
@@ -114,22 +114,24 @@ main (int argc, char *argv[])
   Ipv4InterfaceContainer assignedAddresses = ipv4.Assign (devices);
   auto serverAddress = assignedAddresses.GetAddress (0);
 
-  NS_LOG_INFO ("Create Applications.");
+  NS_LOG_INFO ("Create Applications. Server address is: " << serverAddress);
   
-  Time interPacketInterval = Seconds (0.05);
+  Time interPacketInterval = Seconds (0.5);
   uint16_t port = 4000;
 
   UAVHelper central (serverAddress, port, UAVDataType::VIRTUAL_FORCES_CENTRAL_POSITION, interPacketInterval, 1 + peripheralNodes);
 
   ApplicationContainer apps = central.Install (nodes.Get (0));
   apps.Start (Seconds (1.0));
-  apps.Stop (Seconds (100.0));
+  apps.Stop (Seconds (10.0));
 
 
   UAVHelper client (serverAddress, port, UAVDataType::VIRTUAL_FORCES_POSITION, interPacketInterval, 1 + peripheralNodes);
   for (uint32_t i = 1; i < nodes.GetN(); i++)
   {
     apps = client.Install (nodes.Get (i));
+    apps.Start (Seconds (2.0));
+    apps.Stop (Seconds (9.0));
   }
 
   MobilityHelper mobility;
@@ -144,14 +146,10 @@ main (int argc, char *argv[])
   mobility.Install (nodes);
   Config::Connect ("/NodeList/*/$ns3::MobilityModel/CourseChange", MakeCallback (&CourseChange));
   nodes.Get(0)->GetObject<ns3::WaypointMobilityModel>(MobilityModel::GetTypeId())->AddWaypoint(Waypoint(Seconds(6), Vector(10, 10, 10)));
-
-  apps.Start (Seconds (2.0));
-  apps.Stop (Seconds (9.0));
-
   //
   // Now, do the actual simulation.
   // Limit to 15 seconds
-  Simulator::Stop (Seconds (15));
+  Simulator::Stop (Seconds (10));
 
   AsciiTraceHelper ascii;
   wifiPhy.EnablePcap("UAV", nodes);

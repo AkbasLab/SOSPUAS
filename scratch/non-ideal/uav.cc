@@ -140,13 +140,19 @@ UAV::HandleRead (Ptr<Socket> socket)
     Ptr<WaypointMobilityModel> mobility = GetNode()->GetObject<WaypointMobilityModel>(MobilityModel::GetTypeId());
     if (InetSocketAddress::IsMatchingType (from))
     {
-      NS_LOG_INFO ("At time " << Simulator::Now ().As (Time::S) << " server received "
-                              << packet->GetSize () << " bytes from "
-                              << InetSocketAddress::ConvertFrom (from).GetIpv4 () << " port "
-                              << InetSocketAddress::ConvertFrom (from).GetPort () << " while at ["
-                              << mobility->GetPosition().x << ", "
-                              << mobility->GetPosition().y << ", "
-                              << mobility->GetPosition().z << "]");
+      if (packet->GetSize() == sizeof(UAVData)) {
+        UAVData data;
+        packet->CopyData(reinterpret_cast<uint8_t*>(&data), sizeof(UAVData));
+
+        auto ipv4Addr = InetSocketAddress::ConvertFrom (from).GetIpv4 ();
+        NS_LOG_INFO ("UAV received UAVData while at [" << mobility->GetPosition().x << ", " << mobility->GetPosition().y << ", " << mobility->GetPosition().z << "]");
+
+        auto& entry = m_swarmData[ipv4Addr];
+        entry.data = data;
+        NS_LOG_INFO ("Map size: " << m_swarmData.size());
+      } else {
+        //Drop packets that are not the correct size
+      }
     }
     packet->RemoveAllPacketTags ();
     packet->RemoveAllByteTags ();
@@ -177,9 +183,18 @@ UAV::Send (void)
 
   Address localAddress;
   m_socket->GetSockName (localAddress);
+
   // call to the trace sinks before the packet is actually sent,
   // so that tags added to the packet can be sent as well
-  NS_LOG_FUNCTION("Self is " << Ipv4Address(localAddress)); 
+  if (Ipv4Address::IsMatchingType(localAddress)) {
+    NS_LOG_FUNCTION("Self is " << Ipv4Address::ConvertFrom(localAddress)); 
+
+  } else if (InetSocketAddress::IsMatchingType(localAddress)) {
+    NS_LOG_FUNCTION("Self is inet " << InetSocketAddress::ConvertFrom(localAddress).GetIpv4()); 
+
+  } else {
+    NS_LOG_FUNCTION("non matching local address");
+  }
   for (uint32_t i = 0; i < m_uavCount; i++) {
     Ipv4Address currentPeer(m_serverAddress.Get() + i);
 
@@ -187,11 +202,12 @@ UAV::Send (void)
       //Don't send packets to ourselves
       continue;
     }
-    NS_LOG_FUNCTION("Sending packet to " << currentPeer); 
-    m_socket->SendTo(reinterpret_cast<uint8_t*>(&payload), sizeof(payload), 0, Address(currentPeer));
+    m_socket->SendTo(reinterpret_cast<uint8_t*>(&payload), sizeof(payload), 0, InetSocketAddress(currentPeer, m_port));
     m_sent++;
 
   }
+
+  NS_LOG_FUNCTION("Sent packets to all"); 
   ScheduleTransmit (m_interval);
 }
 

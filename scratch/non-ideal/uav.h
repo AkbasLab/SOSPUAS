@@ -35,6 +35,12 @@ struct UAVData
 	UAVDataType_ type;
 };
 
+
+struct SwarmEntry
+{
+  UAVData data;
+};
+
 class UAV : public Application
 {
 public:
@@ -84,6 +90,8 @@ private:
   uint16_t m_port; //!< Port on which we listen for incoming packets.
   Ptr<Socket> m_socket; //!< IPv4 Socket
   Ipv4Address m_local; //!< local multicast address
+
+  std::map<Ipv4Address, SwarmEntry> m_swarmData;
 
   /// Callbacks for tracing the packet Rx events
   TracedCallback<Ptr<const Packet>> m_rxTrace;
