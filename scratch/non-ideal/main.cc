@@ -18,6 +18,9 @@
 
 #include <cstdint>
 #include <fstream>
+#include <memory>
+#include <fstream>
+
 #include "ns3/core-module.h"
 #include "ns3/csma-module.h"
 #include "ns3/applications-module.h"
@@ -38,13 +41,56 @@ using namespace ns3;
 NS_LOG_COMPONENT_DEFINE ("UAV-MAIN");
 
 static void
-CourseChange (std::string foo, Ptr<const MobilityModel> mobility)
+CourseChange (std::string _unused, Ptr<const MobilityModel> mobility)
 {
   Vector pos = mobility->GetPosition ();
   Vector vel = mobility->GetVelocity ();
   std::cout << (Simulator::Now ().GetMilliSeconds () / 1000.0) << ", model=" << mobility
             << ", POS: x=" << pos.x << ", y=" << pos.y << ", z=" << pos.z << "; VEL:" << vel.x
             << ", y=" << vel.y << ", z=" << vel.z << std::endl;
+}
+
+std::unique_ptr<std::ofstream> s_csvFile;
+
+static void LogPositions(const NodeContainer& nodes)
+{
+  if (!s_csvFile) {
+    s_csvFile.reset(new std::ofstream("positions.csv"));
+    const char header[] = "Time (s),IP Address, X (m), Y (m), Z (m)";
+    s_csvFile->write(header, sizeof(header));
+  }
+
+  auto& stream = *s_csvFile;
+
+  for (uint32_t i = 0; i < nodes.GetN(); i++) {
+    auto node = nodes.Get(i);
+    Ptr<Ipv4> ipv4 = node->GetObject<Ipv4>();
+    auto mobility = node->GetObject<ns3::WaypointMobilityModel>(MobilityModel::GetTypeId());
+    Address address = node->GetDevice(0)->GetAddress(); 
+
+    stream << Simulator::Now().GetSeconds() << ',';
+
+    ipv4->GetAddress(0, 0).GetBroadcast().Print(stream);
+    stream << ',';
+    
+    if (InetSocketAddress::IsMatchingType(address)) {
+      stream << InetSocketAddress::ConvertFrom(address).GetIpv4() << ',';
+
+    } else if (Ipv4Address::IsMatchingType(address)) {
+      stream << Ipv4Address::ConvertFrom(address) << ',';
+
+    } else {
+      stream << address.IsMatchingType(0);
+      stream << address << ',';
+    }
+    stream << mobility->GetPosition().x << ',';
+    stream << mobility->GetPosition().y << ',';
+    stream << mobility->GetPosition().z << ',';
+    stream << std::endl;
+
+  }
+  
+  Simulator::Schedule(MilliSeconds(1), &LogPositions, nodes);
 }
 
 int
@@ -153,11 +199,17 @@ main (int argc, char *argv[])
 
   AsciiTraceHelper ascii;
   wifiPhy.EnablePcap("UAV", nodes);
-
+  
+  Simulator::Schedule(Seconds(0), &LogPositions, nodes);
   NS_LOG_INFO ("Run Simulation.");
   Simulator::Run ();
   NS_LOG_INFO ("Run Finished.");
 
   Simulator::Destroy ();
   NS_LOG_INFO ("Done.");
+
+  //Save file 
+  s_csvFile->flush();
+  s_csvFile.reset(nullptr);
 }
+
