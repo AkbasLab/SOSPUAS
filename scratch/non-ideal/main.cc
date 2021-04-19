@@ -63,15 +63,14 @@ static void LogPositions(const NodeContainer& nodes)
   auto& stream = *s_csvFile;
 
   for (uint32_t i = 0; i < nodes.GetN(); i++) {
-    auto node = nodes.Get(i);
+    Ptr<Node> node = nodes.Get(i);
     Ptr<Ipv4> ipv4 = node->GetObject<Ipv4>();
     auto mobility = node->GetObject<ns3::WaypointMobilityModel>(MobilityModel::GetTypeId());
     Address address = node->GetDevice(0)->GetAddress(); 
 
     stream << Simulator::Now().GetSeconds() << ',';
 
-    ipv4->GetAddress(0, 0).GetBroadcast().Print(stream);
-    stream << ',';
+    stream << node << ',';
     
     if (InetSocketAddress::IsMatchingType(address)) {
       stream << InetSocketAddress::ConvertFrom(address).GetIpv4() << ',';
@@ -191,7 +190,9 @@ main (int argc, char *argv[])
 
   mobility.Install (nodes);
   Config::Connect ("/NodeList/*/$ns3::MobilityModel/CourseChange", MakeCallback (&CourseChange));
-  nodes.Get(0)->GetObject<ns3::WaypointMobilityModel>(MobilityModel::GetTypeId())->AddWaypoint(Waypoint(Seconds(6), Vector(10, 10, 10)));
+  nodes.Get(0)->GetObject<ns3::WaypointMobilityModel>(MobilityModel::GetTypeId())->AddWaypoint(Waypoint(Seconds(1), Vector(10, 10, 10)));
+  nodes.Get(0)->GetObject<ns3::WaypointMobilityModel>(MobilityModel::GetTypeId())->AddWaypoint(Waypoint(Seconds(5), Vector(10, 0, 10)));
+  nodes.Get(0)->GetObject<ns3::WaypointMobilityModel>(MobilityModel::GetTypeId())->AddWaypoint(Waypoint(Seconds(10), Vector(10, 10, 0)));
   //
   // Now, do the actual simulation.
   // Limit to 15 seconds
