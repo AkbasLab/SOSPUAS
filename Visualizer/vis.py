@@ -110,7 +110,7 @@ def main():
     pygame.event.set_grab(True)
 
     target_fps = 144
-    simulation_speed = 1.0
+    simulation_speed = 0.25
     sensitivity = 0.75 * 1.0 / target_fps
     
     move_speed = 15.0 * 1.0 / target_fps

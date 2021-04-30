@@ -107,7 +107,7 @@ main (int argc, char *argv[])
   CommandLine cmd (__FILE__);
   cmd.Parse (argc, argv);
 
-  uint32_t peripheralNodes = 3;
+  uint32_t peripheralNodes = 10;
 
   //
   // Explicitly create the nodes required by the topology (shown above).

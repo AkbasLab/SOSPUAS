@@ -218,8 +218,8 @@ UAV::Send (void)
   m_sendEvent = Simulator::Schedule (m_packetInterval, &UAV::Send, this);
 }
 
-const double VIRTUAL_FORCES_A = 0.01;
-const double VIRTUAL_FORCES_R = 0.1;
+const double VIRTUAL_FORCES_A = 0.0002;
+const double VIRTUAL_FORCES_R = 0.01;
 
 void UAV::Calculate() {
   auto mobilityModel = this->GetNode()->GetObject<ns3::WaypointMobilityModel>();
@@ -245,12 +245,17 @@ void UAV::Calculate() {
         //toOther = toOther / length * MIN_DISTANCE;
       }
 
-      repulsion += 1.0 / toOther;
+      //repulsion += 1.0 / toOther;
     }
   }
 
   double dt = m_calculateInterval.GetSeconds();
-  m_velocity += attraction * VIRTUAL_FORCES_A + repulsion * VIRTUAL_FORCES_R* dt;
+  Vector acceleration = attraction * VIRTUAL_FORCES_A + repulsion * VIRTUAL_FORCES_R;
+  if (acceleration.GetLength() > 100) {
+    NS_LOG_ERROR("ERROR length too large! " << acceleration << " me at " << myPosition);
+  }
+
+  m_velocity += acceleration * dt;
   mobilityModel->AddWaypoint(Waypoint(Simulator::Now() + m_calculateInterval, myPosition + m_velocity * dt));
 
   m_calculateEvent = Simulator::Schedule (m_calculateInterval, &UAV::Calculate, this);
