@@ -107,7 +107,7 @@ main (int argc, char *argv[])
   CommandLine cmd (__FILE__);
   cmd.Parse (argc, argv);
 
-  uint32_t peripheralNodes = 20;
+  uint32_t peripheralNodes = 3;
 
   //
   // Explicitly create the nodes required by the topology (shown above).
@@ -165,23 +165,26 @@ main (int argc, char *argv[])
 
   NS_LOG_INFO ("Create Applications. Server address is: " << serverAddress);
   
-  Time packetInterval = Seconds (0.5);
-  Time calculateInterval = Seconds (0.1);
+  Time packetInterval = Seconds (0.05);
+  Time calculateInterval = Seconds (0.01);
   uint16_t port = 4000;
 
   UAVHelper central (serverAddress, port, UAVDataType::VIRTUAL_FORCES_CENTRAL_POSITION, packetInterval, calculateInterval, 1 + peripheralNodes);
 
   ApplicationContainer apps = central.Install (nodes.Get (0));
-  apps.Start (Seconds (1.0));
-  apps.Stop (Seconds (10.0));
-
+  apps.Start (Seconds (0.0));
 
   UAVHelper client (serverAddress, port, UAVDataType::VIRTUAL_FORCES_POSITION, packetInterval, calculateInterval, 1 + peripheralNodes);
-  for (uint32_t i = 1; i < nodes.GetN(); i++)
+  #if 0
+    uint32_t startCount = 2;
+  #else
+    uint32_t startCount = nodes.GetN();
+  #endif
+
+  for (uint32_t i = 1; i < startCount; i++)
   {
-    apps = client.Install (nodes.Get (i));
-    apps.Start (Seconds (2.0));
-    apps.Stop (Seconds (9.0));
+    ApplicationContainer apps = client.Install (nodes.Get (i));
+    apps.Start (Seconds (1.0));
   }
 
   MobilityHelper mobility;
@@ -215,7 +218,7 @@ main (int argc, char *argv[])
   Config::Connect ("/NodeList/*/$ns3::MobilityModel/CourseChange", MakeCallback (&CourseChange));
   //
   // Now, do the actual simulation.
-  Simulator::Stop (Seconds (8));
+  Simulator::Stop (Seconds (20));
 
   AsciiTraceHelper ascii;
   wifiPhy.EnablePcap("UAV", nodes);

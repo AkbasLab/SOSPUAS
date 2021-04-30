@@ -149,7 +149,7 @@ UAV::HandleRead (Ptr<Socket> socket)
         packet->CopyData(reinterpret_cast<uint8_t*>(&data), sizeof(UAVData));
 
         auto ipv4Addr = InetSocketAddress::ConvertFrom (from).GetIpv4 ();
-        NS_LOG_INFO ("UAV received UAVData while at " << mobility->GetPosition());
+        //NS_LOG_INFO ("UAV received UAVData while at " << mobility->GetPosition());
 
         auto& entry = m_swarmData[ipv4Addr];
         entry.data = data;
@@ -161,6 +161,13 @@ UAV::HandleRead (Ptr<Socket> socket)
     packet->RemoveAllByteTags ();
 
   }
+}
+
+
+void operator+=(Vector& a, const Vector& b) {
+  a.x += b.x;
+  a.y += b.y;
+  a.z += b.z;
 }
 
 
@@ -211,48 +218,42 @@ UAV::Send (void)
   m_sendEvent = Simulator::Schedule (m_packetInterval, &UAV::Send, this);
 }
 
-const double VIRTUAL_FORCES_A = 1;
+const double VIRTUAL_FORCES_A = 0.01;
 const double VIRTUAL_FORCES_R = 0.1;
 
 void UAV::Calculate() {
   auto mobilityModel = this->GetNode()->GetObject<ns3::WaypointMobilityModel>();
 
   Vector myPosition = mobilityModel->GetPosition();
-  double dt = m_calculateInterval.GetSeconds();
 
-  Vector totalForce = {};
+  Vector attraction = {};
+  Vector repulsion = {};
   for (auto& pair : m_swarmData) {
     auto& data = pair.second;
     //Points from us to the other node
     auto toOther = data.data.position - myPosition;
     if (m_uavType == UAVDataType::VIRTUAL_FORCES_POSITION && data.data.type == UAVDataType::VIRTUAL_FORCES_CENTRAL_POSITION) {
-      double a = VIRTUAL_FORCES_A;
-      totalForce = totalForce + toOther * a;
+      attraction += toOther;
     }
     if (m_uavType == UAVDataType::VIRTUAL_FORCES_POSITION && data.data.type == UAVDataType::VIRTUAL_FORCES_POSITION) {
-      double r = VIRTUAL_FORCES_R;
       //Stop possible / 0 errors
       double length = toOther.GetLength();
-      if (length == 0.0) {
-        NS_LOG_FUNCTION("LENGTH IS 0" << myPosition << ", other " << data.data.position);
-        continue;
-      }
-      /*
-      const double MIN_DISTANCE = 0.00001;
+      const double MIN_DISTANCE = 0.001;
       if (length < MIN_DISTANCE) {
+        continue;
         //Lock length to be MIN_DISTANCE if lower
-        toOther = toOther / length * MIN_DISTANCE;
-      }*/
+        //toOther = toOther / length * MIN_DISTANCE;
+      }
 
-      totalForce = totalForce + -1.0 / toOther * r;
+      repulsion += 1.0 / toOther;
     }
   }
 
-  m_velocity = m_velocity + totalForce * dt;
-  mobilityModel->AddWaypoint(Waypoint(Simulator::Now() + m_packetInterval, myPosition + m_velocity * dt));
-  NS_LOG_FUNCTION(m_velocity);
+  double dt = m_calculateInterval.GetSeconds();
+  m_velocity += attraction * VIRTUAL_FORCES_A + repulsion * VIRTUAL_FORCES_R* dt;
+  mobilityModel->AddWaypoint(Waypoint(Simulator::Now() + m_calculateInterval, myPosition + m_velocity * dt));
 
-  m_calculateEvent = Simulator::Schedule (Seconds(dt), &UAV::Calculate, this);
+  m_calculateEvent = Simulator::Schedule (m_calculateInterval, &UAV::Calculate, this);
 
 }
 

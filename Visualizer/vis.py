@@ -103,17 +103,17 @@ def main():
 
 
     pygame.init()
-    display = (1440,810)
-    pygame.display.set_mode(display, DOUBLEBUF|OPENGL)
+    display = (1440, 810)
+    pygame.display.set_mode(display, DOUBLEBUF | OPENGL)
     clock=pygame.time.Clock()
     pygame.mouse.set_visible(False)
     pygame.event.set_grab(True)
 
-    target_fps = 40
-    simulation_speed = 0.5
+    target_fps = 144
+    simulation_speed = 1.0
     sensitivity = 0.75 * 1.0 / target_fps
     
-    move_speed = 10.0 * 1.0 / target_fps
+    move_speed = 15.0 * 1.0 / target_fps
 
     gluPerspective(70, (display[0]/display[1]), 0.01, 500.0)
 
@@ -201,12 +201,12 @@ def main():
                         break
                 search_index += 1
 
-            if before_index == None:
-                uav_last_index[uav] = search_index
-            else:
+            if before_index != None:
                 uav_last_index[uav] = before_index
+            else:
+                uav_last_index[uav] = search_index
 
-            print("Before {}, after {}".format(before_index, after_index))
+            #print("Before {}, after {}".format(before_index, after_index))
 
             if before_index == None and after_index == None:
                 #We have no position data nothing to do
@@ -214,11 +214,9 @@ def main():
             elif before_index != None and after_index == None:
                 #There are no more data points after this point in the simulation. Lock uav's to thier last known position
                 pos = lines[before_index]["pos"]
-                print("USING OLD")
             elif before_index == None and after_index != None:
                 #There are no data points before here so for all we know the UAV was always here (should be unlikely in pratice)
                 pos = lines[after_index]["pos"]
-                print("USING AFTER")
             else:
                 #We have data points before and after so interpolate!
                 a = lines[before_index]["pos"]
@@ -227,9 +225,9 @@ def main():
                 b_time = lines[after_index]["time"]
                 f = normalize(a_time, b_time, simulation_time)
                 pos = lerp(a, b, f)
-                print("sim {}, a is {}, b is {}, f {}".format(simulation_time, a_time, b_time, f))
+                #print("sim {}, a is {}, b is {}, f {}".format(simulation_time, a_time, b_time, f))
 
-            render_cube(offset=a, size=0.5)
+            render_cube(offset=pos, size=0.5)
             
 
 
@@ -237,7 +235,7 @@ def main():
 
         glPopMatrix()
 
-        clock.tick(target_fps) / 1000.0#Convert from millis to seconds
+        clock.tick(target_fps)
         now = time.time()
         delta_time = now - last_time
         last_time = now
