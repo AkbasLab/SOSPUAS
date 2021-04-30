@@ -14,6 +14,7 @@
 #include "ns3/ptr.h"
 #include "ns3/address.h"
 #include "ns3/traced-callback.h"
+#include "ns3/vector.h"
 
 using namespace ns3;
 namespace ns3 {
@@ -31,7 +32,7 @@ namespace UAVDataType
 
 struct UAVData
 {
-	float x, y, z;//Normal SI units
+	Vector position;//Normal SI units
 	UAVDataType_ type;
 };
 
@@ -60,11 +61,7 @@ protected:
   void BroadcastPosition();
   void Send();
 
-    /**
-   * \brief Schedule the next packet transmission
-   * \param dt time interval between packets.
-   */
-  void ScheduleTransmit (Time dt);
+  void Calculate();
 
 private:
   virtual void StartApplication (void);
@@ -80,12 +77,15 @@ private:
   void HandleRead (Ptr<Socket> socket);
 
   UAVDataType_ m_uavType;
-  Time m_interval;
+  Time m_packetInterval;
+  Time m_calculateInterval;
   uint32_t m_uavCount;
   Ipv4Address m_serverAddress;
 
+  Vector m_velocity = {};
+
   uint32_t m_sent;
-  EventId m_sendEvent;
+  EventId m_sendEvent, m_calculateEvent;
   
   uint16_t m_port; //!< Port on which we listen for incoming packets.
   Ptr<Socket> m_socket; //!< IPv4 Socket
@@ -119,7 +119,7 @@ public:
    *
    * \param port The port the server will wait on for incoming packets
    */
-  UAVHelper (Ipv4Address serverAddress, uint16_t port, UAVDataType_ type, Time interPacketInterval, uint32_t uavCount);
+  UAVHelper (Ipv4Address serverAddress, uint16_t port, UAVDataType_ type, Time interPacketInterval, Time calculateInterval, uint32_t uavCount);
 
   /**
    * Record an attribute to be set in each Application after it is is created.

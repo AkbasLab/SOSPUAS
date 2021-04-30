@@ -45,8 +45,11 @@ UAV::GetTypeId (void)
           .AddAttribute ("ServerAddress", "The address of the central server node", Ipv4AddressValue(Ipv4Address((uint32_t) 0)),
                            MakeIpv4AddressAccessor(&UAV::m_serverAddress),
                            MakeIpv4AddressChecker())
-          .AddAttribute("Interval", "", TimeValue(Seconds(1)),
-                           MakeTimeAccessor(&UAV::m_interval),
+          .AddAttribute("PacketInterval", "", TimeValue(Seconds(1)),
+                           MakeTimeAccessor(&UAV::m_packetInterval),
+                           MakeTimeChecker())
+          .AddAttribute("CalculateInterval", "", TimeValue(Seconds(0.1)),
+                           MakeTimeAccessor(&UAV::m_calculateInterval),
                            MakeTimeChecker())
           .AddAttribute ("UavCount", "The number of UAV's in the simulation. Used for finding ip addresses. Always >= 2 because of the central node + 1 client node", UintegerValue (2),
                          MakeUintegerAccessor (&UAV::m_uavCount),
@@ -110,7 +113,8 @@ UAV::StartApplication (void)
   m_socket->SetRecvCallback (MakeCallback (&UAV::HandleRead, this));
   m_socket->SetAllowBroadcast(true);
 
-  ScheduleTransmit(Seconds(0.0));
+  m_sendEvent = Simulator::Schedule (Seconds(0.0), &UAV::Send, this);
+  m_calculateEvent = Simulator::Schedule (Seconds(0.0), &UAV::Calculate, this);
 }
 
 void
@@ -145,11 +149,10 @@ UAV::HandleRead (Ptr<Socket> socket)
         packet->CopyData(reinterpret_cast<uint8_t*>(&data), sizeof(UAVData));
 
         auto ipv4Addr = InetSocketAddress::ConvertFrom (from).GetIpv4 ();
-        NS_LOG_INFO ("UAV received UAVData while at [" << mobility->GetPosition().x << ", " << mobility->GetPosition().y << ", " << mobility->GetPosition().z << "]");
+        NS_LOG_INFO ("UAV received UAVData while at " << mobility->GetPosition());
 
         auto& entry = m_swarmData[ipv4Addr];
         entry.data = data;
-        NS_LOG_INFO ("Map size: " << m_swarmData.size());
       } else {
         //Drop packets that are not the correct size
       }
@@ -161,40 +164,38 @@ UAV::HandleRead (Ptr<Socket> socket)
 }
 
 
-void
-UAV::ScheduleTransmit (Time dt)
-{
-  NS_LOG_FUNCTION (this << dt);
-  m_sendEvent = Simulator::Schedule (dt, &UAV::Send, this);
+Vector operator*(const Vector& a, const Vector& b) {
+  return { a.x * b.x, a.y * b.y, a.z * b.z };
 }
+
+Vector operator*(const Vector& a, double b) {
+  return { a.x * b, a.y * b, a.z * b };
+}
+
+Vector operator/(const Vector& a, double b) {
+  return { a.x / b, a.y / b, a.z / b };
+}
+
+Vector operator/(double a, const Vector& b) {
+  return { a / b.x, a / b.y, a / b.z };
+}
+
+
 
 void
 UAV::Send (void)
 {
-  NS_LOG_FUNCTION (this);
-
   NS_ASSERT (m_sendEvent.IsExpired ());
+  auto mobilityModel = this->GetNode()->GetObject<ns3::WaypointMobilityModel>();
+  NS_ASSERT(mobilityModel->IsInitialized());
 
   UAVData payload;
-  payload.x = 0;
-  payload.y = 0;
-  payload.z = 0;
+  payload.position = mobilityModel->GetPosition();
   payload.type = m_uavType;
 
   Address localAddress;
   m_socket->GetSockName (localAddress);
 
-  // call to the trace sinks before the packet is actually sent,
-  // so that tags added to the packet can be sent as well
-  if (Ipv4Address::IsMatchingType(localAddress)) {
-    NS_LOG_FUNCTION("Self is " << Ipv4Address::ConvertFrom(localAddress)); 
-
-  } else if (InetSocketAddress::IsMatchingType(localAddress)) {
-    NS_LOG_FUNCTION("Self is inet " << InetSocketAddress::ConvertFrom(localAddress).GetIpv4()); 
-
-  } else {
-    NS_LOG_FUNCTION("non matching local address");
-  }
   for (uint32_t i = 0; i < m_uavCount; i++) {
     Ipv4Address currentPeer(m_serverAddress.Get() + i);
 
@@ -207,20 +208,64 @@ UAV::Send (void)
 
   }
 
-  NS_LOG_FUNCTION("Sent packets to all"); 
-  ScheduleTransmit (m_interval);
+  m_sendEvent = Simulator::Schedule (m_packetInterval, &UAV::Send, this);
 }
 
+const double VIRTUAL_FORCES_A = 1;
+const double VIRTUAL_FORCES_R = 0.1;
+
+void UAV::Calculate() {
+  auto mobilityModel = this->GetNode()->GetObject<ns3::WaypointMobilityModel>();
+
+  Vector myPosition = mobilityModel->GetPosition();
+  double dt = m_calculateInterval.GetSeconds();
+
+  Vector totalForce = {};
+  for (auto& pair : m_swarmData) {
+    auto& data = pair.second;
+    //Points from us to the other node
+    auto toOther = data.data.position - myPosition;
+    if (m_uavType == UAVDataType::VIRTUAL_FORCES_POSITION && data.data.type == UAVDataType::VIRTUAL_FORCES_CENTRAL_POSITION) {
+      double a = VIRTUAL_FORCES_A;
+      totalForce = totalForce + toOther * a;
+    }
+    if (m_uavType == UAVDataType::VIRTUAL_FORCES_POSITION && data.data.type == UAVDataType::VIRTUAL_FORCES_POSITION) {
+      double r = VIRTUAL_FORCES_R;
+      //Stop possible / 0 errors
+      double length = toOther.GetLength();
+      if (length == 0.0) {
+        NS_LOG_FUNCTION("LENGTH IS 0" << myPosition << ", other " << data.data.position);
+        continue;
+      }
+      /*
+      const double MIN_DISTANCE = 0.00001;
+      if (length < MIN_DISTANCE) {
+        //Lock length to be MIN_DISTANCE if lower
+        toOther = toOther / length * MIN_DISTANCE;
+      }*/
+
+      totalForce = totalForce + -1.0 / toOther * r;
+    }
+  }
+
+  m_velocity = m_velocity + totalForce * dt;
+  mobilityModel->AddWaypoint(Waypoint(Simulator::Now() + m_packetInterval, myPosition + m_velocity * dt));
+  NS_LOG_FUNCTION(m_velocity);
+
+  m_calculateEvent = Simulator::Schedule (Seconds(dt), &UAV::Calculate, this);
+
+}
 
 // ========== Helper stuff ==========
 
 
-UAVHelper::UAVHelper (Ipv4Address serverAddress, uint16_t port, UAVDataType_ type, Time interPacketInterval, uint32_t uavCount)
+UAVHelper::UAVHelper (Ipv4Address serverAddress, uint16_t port, UAVDataType_ type, Time packetInterval, Time calculateInterval, uint32_t uavCount)
 {
   m_factory.SetTypeId (UAV::GetTypeId ());
   SetAttribute("ServerAddress", Ipv4AddressValue(serverAddress));
   SetAttribute ("Port", UintegerValue (port));
-  SetAttribute("Interval", TimeValue(interPacketInterval));
+  SetAttribute("PacketInterval", TimeValue(packetInterval));
+  SetAttribute("CalculateInterval", TimeValue(calculateInterval));
   SetAttribute("UavCount", UintegerValue(uavCount));
   SetAttribute("UavType", UintegerValue(type));
 }

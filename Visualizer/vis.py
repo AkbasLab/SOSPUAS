@@ -44,17 +44,20 @@ def render_cube(offset=glm.vec3(0,0,0), size=1.0):
     glEnd()
 
 
-def map_valule(value, leftMin, leftMax, rightMin, rightMax):
-    # Figure out how 'wide' each range is
-    leftSpan = leftMax - leftMin
-    rightSpan = rightMax - rightMin
-
-    # Convert the left range into a 0-1 range (float)
-    valueScaled = float(value - leftMin) / float(leftSpan)
-
+def lerp(a, b, f):
     # Convert the 0-1 range into a value in the right range.
-    return rightMin + (valueScaled * rightSpan)
+    return a + ((b - a) * f)
 
+
+def normalize(a, b, value):
+    return float(value - a) / float(b - a)
+
+
+def map(value, leftMin, leftMax, rightMin, rightMax):
+    # Figure out how 'wide' each range is
+    f = normalize(leftMin, leftMax, value)
+
+    return lerp(rightMin, rightMax, f)
 
 def parse_csv_line(line):
     parts = line.split(",")
@@ -106,7 +109,8 @@ def main():
     pygame.mouse.set_visible(False)
     pygame.event.set_grab(True)
 
-    target_fps = 144
+    target_fps = 40
+    simulation_speed = 0.5
     sensitivity = 0.75 * 1.0 / target_fps
     
     move_speed = 10.0 * 1.0 / target_fps
@@ -124,6 +128,7 @@ def main():
         keymap[i] = False
 
     last_time = time.time()
+    delta_time = 0.0
     simulation_time = 0.0
     while True:
         for event in pygame.event.get():
@@ -172,7 +177,7 @@ def main():
         glPushMatrix()
 
         #glRotatef(1, 3, 1, 1)
-        glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
 
         gluLookAt(camera_pos.x, camera_pos.y, camera_pos.z, camera_pos.x + camera_forward.x, camera_pos.y + camera_forward.y, camera_pos.z + camera_forward.z, 0.0, 1.0, 0.0)
         for uav in uavs:
@@ -196,24 +201,35 @@ def main():
                         break
                 search_index += 1
 
+            if before_index == None:
+                uav_last_index[uav] = search_index
+            else:
+                uav_last_index[uav] = before_index
+
+            print("Before {}, after {}".format(before_index, after_index))
+
             if before_index == None and after_index == None:
                 #We have no position data nothing to do
                 continue
             elif before_index != None and after_index == None:
                 #There are no more data points after this point in the simulation. Lock uav's to thier last known position
                 pos = lines[before_index]["pos"]
+                print("USING OLD")
             elif before_index == None and after_index != None:
                 #There are no data points before here so for all we know the UAV was always here (should be unlikely in pratice)
                 pos = lines[after_index]["pos"]
+                print("USING AFTER")
             else:
                 #We have data points before and after so interpolate!
                 a = lines[before_index]["pos"]
                 a_time = lines[before_index]["time"]
                 b = lines[after_index]["pos"]
                 b_time = lines[after_index]["time"]
-                pos = map_valule(simulation_time, a_time, b_time, a, b)
+                f = normalize(a_time, b_time, simulation_time)
+                pos = lerp(a, b, f)
+                print("sim {}, a is {}, b is {}, f {}".format(simulation_time, a_time, b_time, f))
 
-            render_cube(offset=pos, size=0.5)
+            render_cube(offset=a, size=0.5)
             
 
 
@@ -226,8 +242,8 @@ def main():
         delta_time = now - last_time
         last_time = now
 
-        simulation_time += delta_time
-        print("time at {}, delta {}".format(simulation_time, delta_time))
+        simulation_time += delta_time * simulation_speed
+        #print("time at {}, delta {}".format(simulation_time, delta_time))
 
 
 main()

@@ -320,3 +320,4 @@ def build(bld):
     for module in all_contrib_modules:
         modheader = bld(features='ns3moduleheader')
         modheader.module = module.split('/')[-1]
+

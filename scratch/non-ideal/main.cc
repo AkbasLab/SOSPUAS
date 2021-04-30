@@ -27,12 +27,14 @@
 #include "ns3/internet-module.h"
 #include "ns3/mobility-helper.h"
 #include "ns3/mobility-model.h"
+#include "ns3/ptr.h"
 #include "ns3/waypoint-mobility-model.h"
 #include "ns3/rectangle.h"
 #include "ns3/yans-wifi-helper.h"
 #include "ns3/ipv4-address-helper.h"
 #include "ns3/yans-wifi-channel.h"
 #include "ns3/internet-stack-helper.h"
+#include "ns3/attribute-helper.h"
 
 #include "uav.h"
 
@@ -43,11 +45,13 @@ NS_LOG_COMPONENT_DEFINE ("UAV-MAIN");
 static void
 CourseChange (std::string _unused, Ptr<const MobilityModel> mobility)
 {
+  /*
   Vector pos = mobility->GetPosition ();
   Vector vel = mobility->GetVelocity ();
   std::cout << (Simulator::Now ().GetMilliSeconds () / 1000.0) << ", model=" << mobility
             << ", POS: x=" << pos.x << ", y=" << pos.y << ", z=" << pos.z << "; VEL:" << vel.x
             << ", y=" << vel.y << ", z=" << vel.z << std::endl;
+  */
 }
 
 std::unique_ptr<std::ofstream> s_csvFile;
@@ -103,7 +107,7 @@ main (int argc, char *argv[])
   CommandLine cmd (__FILE__);
   cmd.Parse (argc, argv);
 
-  uint32_t peripheralNodes = 2;
+  uint32_t peripheralNodes = 20;
 
   //
   // Explicitly create the nodes required by the topology (shown above).
@@ -161,17 +165,18 @@ main (int argc, char *argv[])
 
   NS_LOG_INFO ("Create Applications. Server address is: " << serverAddress);
   
-  Time interPacketInterval = Seconds (0.5);
+  Time packetInterval = Seconds (0.5);
+  Time calculateInterval = Seconds (0.1);
   uint16_t port = 4000;
 
-  UAVHelper central (serverAddress, port, UAVDataType::VIRTUAL_FORCES_CENTRAL_POSITION, interPacketInterval, 1 + peripheralNodes);
+  UAVHelper central (serverAddress, port, UAVDataType::VIRTUAL_FORCES_CENTRAL_POSITION, packetInterval, calculateInterval, 1 + peripheralNodes);
 
   ApplicationContainer apps = central.Install (nodes.Get (0));
   apps.Start (Seconds (1.0));
   apps.Stop (Seconds (10.0));
 
 
-  UAVHelper client (serverAddress, port, UAVDataType::VIRTUAL_FORCES_POSITION, interPacketInterval, 1 + peripheralNodes);
+  UAVHelper client (serverAddress, port, UAVDataType::VIRTUAL_FORCES_POSITION, packetInterval, calculateInterval, 1 + peripheralNodes);
   for (uint32_t i = 1; i < nodes.GetN(); i++)
   {
     apps = client.Install (nodes.Get (i));
@@ -180,23 +185,37 @@ main (int argc, char *argv[])
   }
 
   MobilityHelper mobility;
+#if 1
+  Ptr<RandomBoxPositionAllocator> alloc = CreateObject<RandomBoxPositionAllocator> ();
 
-  mobility.SetPositionAllocator ("ns3::GridPositionAllocator", "MinX", DoubleValue (0.0), "MinY",
-                                 DoubleValue (0.0), "DeltaX", DoubleValue (1.0), "DeltaY",
-                                 DoubleValue (1.0), "GridWidth", UintegerValue (3), "LayoutType",
+  Ptr<UniformRandomVariable> xz = CreateObject<UniformRandomVariable> ();
+  xz->SetAttribute ("Min", DoubleValue (-10));
+  xz->SetAttribute ("Max", DoubleValue (10));
+
+  Ptr<UniformRandomVariable> y = CreateObject<UniformRandomVariable> ();
+  y->SetAttribute ("Min", DoubleValue (0));
+  y->SetAttribute ("Max", DoubleValue (10));
+
+
+  alloc->SetX(xz);
+  alloc->SetY(y);
+  alloc->SetZ(xz);
+  mobility.SetPositionAllocator(alloc);
+
+#else
+  mobility.SetPositionAllocator ("ns3::RandomBoxPositionAllocator", "MinX", DoubleValue (0.0), "MinY",
+                                 DoubleValue (0.0), "DeltaX", DoubleValue (100.0), "DeltaY",
+                                 DoubleValue (1.0), "GridWidth", UintegerValue (10), "LayoutType",
                                  StringValue ("RowFirst"));
 
+#endif
   mobility.SetMobilityModel ("ns3::WaypointMobilityModel", "InitialPositionIsWaypoint", BooleanValue(true));
 
   mobility.Install (nodes);
   Config::Connect ("/NodeList/*/$ns3::MobilityModel/CourseChange", MakeCallback (&CourseChange));
-  nodes.Get(0)->GetObject<ns3::WaypointMobilityModel>(MobilityModel::GetTypeId())->AddWaypoint(Waypoint(Seconds(1), Vector(10, 10, 10)));
-  nodes.Get(0)->GetObject<ns3::WaypointMobilityModel>(MobilityModel::GetTypeId())->AddWaypoint(Waypoint(Seconds(5), Vector(10, 0, 10)));
-  nodes.Get(0)->GetObject<ns3::WaypointMobilityModel>(MobilityModel::GetTypeId())->AddWaypoint(Waypoint(Seconds(10), Vector(10, 10, 0)));
   //
   // Now, do the actual simulation.
-  // Limit to 15 seconds
-  Simulator::Stop (Seconds (10));
+  Simulator::Stop (Seconds (8));
 
   AsciiTraceHelper ascii;
   wifiPhy.EnablePcap("UAV", nodes);
