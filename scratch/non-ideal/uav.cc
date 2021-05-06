@@ -1,4 +1,6 @@
+#include <math.h>
 #include "uav.h"
+
 #include "ns3/udp-server.h"
 #include "ns3/udp-client.h"
 #include "ns3/udp-trace-client.h"
@@ -177,6 +179,11 @@ void operator+=(Vector& a, const Vector& b) {
   a.z += b.z;
 }
 
+void operator-=(Vector& a, const Vector& b) {
+  a.x -= b.x;
+  a.y -= b.y;
+  a.z -= b.z;
+}
 
 Vector operator*(const Vector& a, const Vector& b) {
   return { a.x * b.x, a.y * b.y, a.z * b.z };
@@ -193,6 +200,11 @@ Vector operator/(const Vector& a, double b) {
 Vector operator/(double a, const Vector& b) {
   return { a / b.x, a / b.y, a / b.z };
 }
+
+Vector operator-(const Vector& a) {
+  return { -a.x, -a.y, -a.z };
+}
+
 
 
 
@@ -226,48 +238,100 @@ UAV::Send (void)
   m_sendEvent = Simulator::Schedule (m_packetInterval, &UAV::Send, this);
 }
 
+
+
+//Math functions for linear interpolation and moving between ranges
+template<typename T>
+T lerp(T a, T b, T f) {
+    //Convert the 0-1 range into a value in the right range.
+    return a + (b - a) * f;
+}
+
+
+template<typename T>
+T normalize(T a, T b, T value) {
+    return (value - a) / (b - a);
+}
+
+
+template<typename T>
+T map(T value, T leftMin, T leftMax, T rightMin, T rightMax) {
+    // Figure out how 'wide' each range is
+    T f = normalize(leftMin, leftMax, value);
+
+    return lerp(rightMin, rightMax, f);
+}
+
+
+
 const double VIRTUAL_FORCES_A = 0.2;
-const double VIRTUAL_FORCES_R = 0.4;
+const double VIRTUAL_FORCES_R = 1.2;
 
 void UAV::Calculate() {
   auto mobilityModel = this->GetNode()->GetObject<ns3::WaypointMobilityModel>();
 
   Vector myPosition = mobilityModel->GetPosition();
 
+  //NS_LOG_INFO("Me at " << myPosition);
   Vector attraction = { 0, 0, 0};
   Vector repulsion = { 0, 0, 0};
   for (auto& pair : m_swarmData) {
     auto& data = pair.second;
-    //Points from us to the other node
+
+    //Unit vector points from us to the other node
     auto toOther = data.data.position - myPosition;
+    double length = toOther.GetLength();
+    toOther = toOther / length;
+
+    //NS_LOG_INFO("  other at " << data.data.position << " other at " << toOther);
     if (m_uavType == UAVDataType::VIRTUAL_FORCES_POSITION && data.data.type == UAVDataType::VIRTUAL_FORCES_CENTRAL_POSITION) {
+
+      //NS_LOG_INFO("  attracting to center" << toOther);
+      //This could be simplified to attraction attraction += ;data.data.position - myPosition;
+      //But I leave it like this to clearly show the magnitude of the force and the direction seperately
+      float force = length;
+      attraction += toOther * force;
+
       //attraction += toOther;
     }
     if (m_uavType == UAVDataType::VIRTUAL_FORCES_POSITION && data.data.type == UAVDataType::VIRTUAL_FORCES_POSITION) {
-      //double length = toOther.GetLength();
-      //const double MIN_DISTANCE = 0.1;
-      //if (length < MIN_DISTANCE) {
-        //Stop possible / 0 errors
-       // continue;
-        //toOther = toOther / length * MIN_DISTANCE;
-      //}
-
-      repulsion += 1.0 / toOther;
+      //Force is inversely porpotional to length
+      float force = 1.0 / length;
+      //And points away from the other node
+      repulsion += -toOther * force;
+      //NS_LOG_INFO("  repulsing from other force: " << force << " in dir: " << toOther);
     }
   }
 
+  //Apply phisics and integrate
   double dt = m_calculateInterval.GetSeconds();
   double mass = 1;
   //a=F/m
   Vector acceleration = (attraction * VIRTUAL_FORCES_A + repulsion * VIRTUAL_FORCES_R) / mass;
-  if (acceleration.GetLength() < 100) {
-    m_velocity += acceleration * dt;
-    auto now = Simulator::Now();
-    auto later = now + m_calculateInterval;
-    mobilityModel->AddWaypoint(Waypoint(later, myPosition + m_velocity * dt));
+  m_velocity += acceleration * dt;
+
+  auto now = Simulator::Now();
+  auto later = now + m_calculateInterval;
+  mobilityModel->AddWaypoint(Waypoint(later, myPosition + m_velocity * dt));
+
+  //Slight velocity dampening if high enough
+  double velocity = m_velocity.GetLength();
+  const double minDampen = 0.2;
+  const double maxDampen = 1.0;
+  //Dampen at most 50% of overall velocity per second
+  double maxDampenValue = 0.5 * dt;
+
+  double dampening;
+  if (velocity > maxDampen) {
+    dampening = maxDampenValue;
+  } else if (velocity > minDampen) {
+    dampening = map(velocity, minDampen, maxDampen, 0.0, maxDampenValue);
   } else {
-    NS_LOG_ERROR("length too large! " << acceleration << " me at " << myPosition);
+    //No dampening for velocities [0.0..minDampen] so nodes can get moving
+    dampening = 0.0;
   }
+
+  m_velocity -= m_velocity * dampening;
   
   m_calculateEvent = Simulator::Schedule (m_calculateInterval, &UAV::Calculate, this);
 
