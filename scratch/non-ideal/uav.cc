@@ -43,8 +43,12 @@ UAV::GetTypeId (void)
                            MakeTraceSourceAccessor (&UAV::m_rxTraceWithAddresses),
                            "ns3::Packet::TwoAddressTracedCallback")
           .AddAttribute ("ServerAddress", "The address of the central server node", Ipv4AddressValue(Ipv4Address((uint32_t) 0)),
-                           MakeIpv4AddressAccessor(&UAV::m_serverAddress),
+                           MakeIpv4AddressAccessor(&UAV::m_rootAddress),
                            MakeIpv4AddressChecker())
+          .AddAttribute ("ClientAddress", "The address of the this uav", Ipv4AddressValue(Ipv4Address((uint32_t) 0)),
+                           MakeIpv4AddressAccessor(&UAV::m_uavAddress),
+                           MakeIpv4AddressChecker())
+
           .AddAttribute("PacketInterval", "", TimeValue(Seconds(1)),
                            MakeTimeAccessor(&UAV::m_packetInterval),
                            MakeTimeChecker())
@@ -90,7 +94,7 @@ UAV::StartApplication (void)
     {
       TypeId tid = TypeId::LookupByName ("ns3::UdpSocketFactory");
       m_socket = Socket::CreateSocket (GetNode (), tid);
-      InetSocketAddress local = InetSocketAddress (Ipv4Address::GetAny (), m_port);
+      InetSocketAddress local = InetSocketAddress (m_uavAddress, m_port);
       if (m_socket->Bind (local) == -1)
         {
           NS_FATAL_ERROR ("Failed to bind socket");
@@ -144,18 +148,21 @@ UAV::HandleRead (Ptr<Socket> socket)
     Ptr<WaypointMobilityModel> mobility = GetNode()->GetObject<WaypointMobilityModel>(MobilityModel::GetTypeId());
     if (InetSocketAddress::IsMatchingType (from))
     {
-      if (packet->GetSize() == sizeof(UAVData)) {
-        UAVData data;
-        packet->CopyData(reinterpret_cast<uint8_t*>(&data), sizeof(UAVData));
-
-        auto ipv4Addr = InetSocketAddress::ConvertFrom (from).GetIpv4 ();
-        //NS_LOG_INFO ("UAV received UAVData while at " << mobility->GetPosition());
-
-        auto& entry = m_swarmData[ipv4Addr];
-        entry.data = data;
-      } else {
+      if (packet->GetSize() != sizeof(UAVData)) {
         //Drop packets that are not the correct size
+        continue;
       }
+      auto ipv4Addr = InetSocketAddress::ConvertFrom (from).GetIpv4 ();
+      if (ipv4Addr == m_uavAddress) {
+        continue;
+      }
+      
+      UAVData data;
+      packet->CopyData(reinterpret_cast<uint8_t*>(&data), sizeof(UAVData));
+      
+      
+      auto& entry = m_swarmData[ipv4Addr];
+      entry.data = data;
     }
     packet->RemoveAllPacketTags ();
     packet->RemoveAllByteTags ();
@@ -204,12 +211,13 @@ UAV::Send (void)
   m_socket->GetSockName (localAddress);
 
   for (uint32_t i = 0; i < m_uavCount; i++) {
-    Ipv4Address currentPeer(m_serverAddress.Get() + i);
+    Ipv4Address currentPeer(m_rootAddress.Get() + i);
 
-    if (Address(currentPeer) == localAddress) {
+    if (Ipv4Address(currentPeer) == localAddress) {
       //Don't send packets to ourselves
       continue;
     }
+    
     m_socket->SendTo(reinterpret_cast<uint8_t*>(&payload), sizeof(payload), 0, InetSocketAddress(currentPeer, m_port));
     m_sent++;
 
@@ -218,46 +226,49 @@ UAV::Send (void)
   m_sendEvent = Simulator::Schedule (m_packetInterval, &UAV::Send, this);
 }
 
-const double VIRTUAL_FORCES_A = 0.0002;
-const double VIRTUAL_FORCES_R = 0.01;
+const double VIRTUAL_FORCES_A = 0.2;
+const double VIRTUAL_FORCES_R = 0.4;
 
 void UAV::Calculate() {
   auto mobilityModel = this->GetNode()->GetObject<ns3::WaypointMobilityModel>();
 
   Vector myPosition = mobilityModel->GetPosition();
 
-  Vector attraction = {};
-  Vector repulsion = {};
+  Vector attraction = { 0, 0, 0};
+  Vector repulsion = { 0, 0, 0};
   for (auto& pair : m_swarmData) {
     auto& data = pair.second;
     //Points from us to the other node
     auto toOther = data.data.position - myPosition;
     if (m_uavType == UAVDataType::VIRTUAL_FORCES_POSITION && data.data.type == UAVDataType::VIRTUAL_FORCES_CENTRAL_POSITION) {
-      attraction += toOther;
+      //attraction += toOther;
     }
     if (m_uavType == UAVDataType::VIRTUAL_FORCES_POSITION && data.data.type == UAVDataType::VIRTUAL_FORCES_POSITION) {
-      //Stop possible / 0 errors
-      double length = toOther.GetLength();
-      const double MIN_DISTANCE = 0.001;
-      if (length < MIN_DISTANCE) {
-        continue;
-        //Lock length to be MIN_DISTANCE if lower
+      //double length = toOther.GetLength();
+      //const double MIN_DISTANCE = 0.1;
+      //if (length < MIN_DISTANCE) {
+        //Stop possible / 0 errors
+       // continue;
         //toOther = toOther / length * MIN_DISTANCE;
-      }
+      //}
 
-      //repulsion += 1.0 / toOther;
+      repulsion += 1.0 / toOther;
     }
   }
 
   double dt = m_calculateInterval.GetSeconds();
-  Vector acceleration = attraction * VIRTUAL_FORCES_A + repulsion * VIRTUAL_FORCES_R;
-  if (acceleration.GetLength() > 100) {
-    NS_LOG_ERROR("ERROR length too large! " << acceleration << " me at " << myPosition);
+  double mass = 1;
+  //a=F/m
+  Vector acceleration = (attraction * VIRTUAL_FORCES_A + repulsion * VIRTUAL_FORCES_R) / mass;
+  if (acceleration.GetLength() < 100) {
+    m_velocity += acceleration * dt;
+    auto now = Simulator::Now();
+    auto later = now + m_calculateInterval;
+    mobilityModel->AddWaypoint(Waypoint(later, myPosition + m_velocity * dt));
+  } else {
+    NS_LOG_ERROR("length too large! " << acceleration << " me at " << myPosition);
   }
-
-  m_velocity += acceleration * dt;
-  mobilityModel->AddWaypoint(Waypoint(Simulator::Now() + m_calculateInterval, myPosition + m_velocity * dt));
-
+  
   m_calculateEvent = Simulator::Schedule (m_calculateInterval, &UAV::Calculate, this);
 
 }

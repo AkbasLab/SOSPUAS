@@ -77,10 +77,11 @@ private:
   void HandleRead (Ptr<Socket> socket);
 
   UAVDataType_ m_uavType;
+  Ipv4Address m_uavAddress;
   Time m_packetInterval;
   Time m_calculateInterval;
   uint32_t m_uavCount;
-  Ipv4Address m_serverAddress;
+  Ipv4Address m_rootAddress;
 
   Vector m_velocity = {};
 

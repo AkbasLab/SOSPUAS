@@ -44,6 +44,15 @@ def render_cube(offset=glm.vec3(0,0,0), size=1.0):
     glEnd()
 
 
+
+def render_ray(offset, ray):
+    glBegin(GL_LINES)
+    glColor3f(1.0, 0.0, 0.0)
+    glVertex3f(offset.x, offset.y, offset.z)
+    glVertex3f(ray.x, ray.y, ray.z)
+    glEnd()
+
+
 def lerp(a, b, f):
     # Convert the 0-1 range into a value in the right range.
     return a + ((b - a) * f)
@@ -110,7 +119,7 @@ def main():
     pygame.event.set_grab(True)
 
     target_fps = 144
-    simulation_speed = 0.25
+    simulation_speed = 1
     sensitivity = 0.75 * 1.0 / target_fps
     
     move_speed = 15.0 * 1.0 / target_fps
@@ -223,6 +232,7 @@ def main():
                 a_time = lines[before_index]["time"]
                 b = lines[after_index]["pos"]
                 b_time = lines[after_index]["time"]
+
                 f = normalize(a_time, b_time, simulation_time)
                 pos = lerp(a, b, f)
                 #print("sim {}, a is {}, b is {}, f {}".format(simulation_time, a_time, b_time, f))
@@ -230,6 +240,7 @@ def main():
             render_cube(offset=pos, size=0.5)
             
 
+        render_cube(glm.vec3(0, 0, 0), 0.1)
 
         pygame.display.flip()
 

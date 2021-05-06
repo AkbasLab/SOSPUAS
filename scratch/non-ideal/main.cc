@@ -107,7 +107,7 @@ main (int argc, char *argv[])
   CommandLine cmd (__FILE__);
   cmd.Parse (argc, argv);
 
-  uint32_t peripheralNodes = 10;
+  uint32_t peripheralNodes = 5;
 
   //
   // Explicitly create the nodes required by the topology (shown above).
@@ -172,6 +172,7 @@ main (int argc, char *argv[])
   UAVHelper central (serverAddress, port, UAVDataType::VIRTUAL_FORCES_CENTRAL_POSITION, packetInterval, calculateInterval, 1 + peripheralNodes);
 
   ApplicationContainer apps = central.Install (nodes.Get (0));
+  apps.Get(0)->SetAttribute("ClientAddress", Ipv4AddressValue(serverAddress));
   apps.Start (Seconds (0.0));
 
   UAVHelper client (serverAddress, port, UAVDataType::VIRTUAL_FORCES_POSITION, packetInterval, calculateInterval, 1 + peripheralNodes);
@@ -183,7 +184,9 @@ main (int argc, char *argv[])
 
   for (uint32_t i = 1; i < startCount; i++)
   {
-    ApplicationContainer apps = client.Install (nodes.Get (i));
+    auto node = nodes.Get(i);
+    ApplicationContainer apps = client.Install (node);
+    apps.Get(0)->SetAttribute("ClientAddress", Ipv4AddressValue(assignedAddresses.GetAddress(i)));
     apps.Start (Seconds (1.0));
   }
 
@@ -192,12 +195,13 @@ main (int argc, char *argv[])
   Ptr<RandomBoxPositionAllocator> alloc = CreateObject<RandomBoxPositionAllocator> ();
 
   Ptr<UniformRandomVariable> xz = CreateObject<UniformRandomVariable> ();
-  xz->SetAttribute ("Min", DoubleValue (-10));
-  xz->SetAttribute ("Max", DoubleValue (10));
+  double range = 1;
+  xz->SetAttribute ("Min", DoubleValue (-range));
+  xz->SetAttribute ("Max", DoubleValue (range));
 
   Ptr<UniformRandomVariable> y = CreateObject<UniformRandomVariable> ();
-  y->SetAttribute ("Min", DoubleValue (0));
-  y->SetAttribute ("Max", DoubleValue (10));
+  y->SetAttribute ("Min", DoubleValue (-range));
+  y->SetAttribute ("Max", DoubleValue (range));
 
 
   alloc->SetX(xz);
@@ -218,7 +222,7 @@ main (int argc, char *argv[])
   Config::Connect ("/NodeList/*/$ns3::MobilityModel/CourseChange", MakeCallback (&CourseChange));
   //
   // Now, do the actual simulation.
-  Simulator::Stop (Seconds (20));
+  Simulator::Stop (Seconds (10));
 
   AsciiTraceHelper ascii;
   wifiPhy.EnablePcap("UAV", nodes);
