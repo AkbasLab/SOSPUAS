@@ -109,7 +109,7 @@ LogPositions (const NodeContainer &nodes)
 
 
 bool ShouldDoCyberAttack() {
-  return true;
+  return false;
 }
 
 int
@@ -125,9 +125,10 @@ main (int argc, char *argv[])
   //Parameters
   uint32_t peripheralNodes = 7;
   double spawnRadius = 5;
-  double duration = 240;
+  double duration = 180;
   Time packetInterval = Seconds (0.05);
   Time calculateInterval = Seconds (0.01);
+  uint64_t seed = 4576543535377;
 
   //
   // Explicitly create the nodes required by the topology (shown above).
@@ -232,7 +233,8 @@ main (int argc, char *argv[])
   Ptr<ListPositionAllocator> alloc = CreateObject<ListPositionAllocator>();
   //For central node
   alloc->Add(Vector(0, 0, 0));
-  std::default_random_engine rng(std::random_device{}());
+  std::default_random_engine rng(seed);
+  //std::default_random_engine rng(std::random_device{}());
   std::uniform_real_distribution<double> dist(-spawnRadius, spawnRadius);
 
   uint32_t count = 0;
