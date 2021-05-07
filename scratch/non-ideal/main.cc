@@ -37,6 +37,7 @@
 #include "ns3/internet-stack-helper.h"
 #include "ns3/attribute-helper.h"
 
+#include "main.h"
 #include "uav.h"
 
 using namespace ns3;
@@ -57,6 +58,21 @@ CourseChange (std::string _unused, Ptr<const MobilityModel> mobility)
 
 std::unique_ptr<std::ofstream> s_csvFile;
 
+
+void SetColor(const Ipv4Address& address, Vector color) {
+  auto &stream = *s_csvFile;
+  stream << "color,";
+  stream << Simulator::Now ().GetSeconds () << ',';
+
+  address.Print(stream);
+  stream << ',';
+
+  stream << color.x << ',';
+  stream << color.y << ',';
+  stream << color.z << ',';
+  stream << std::endl;
+}
+
 static void
 LogPositions (const NodeContainer &nodes)
 {
@@ -72,27 +88,16 @@ LogPositions (const NodeContainer &nodes)
   for (uint32_t i = 0; i < nodes.GetN (); i++)
     {
       Ptr<Node> node = nodes.Get (i);
-      Ptr<Ipv4> ipv4 = node->GetObject<Ipv4> ();
       auto mobility = node->GetObject<ns3::WaypointMobilityModel> (MobilityModel::GetTypeId ());
-      Address address = node->GetDevice (0)->GetAddress ();
+      auto uav = node->GetApplication(0);
 
       stream << Simulator::Now ().GetSeconds () << ',';
 
-      stream << node << ',';
+      Ipv4AddressValue addressValue;
+      uav->GetAttribute("ClientAddress", addressValue);
+      addressValue.Get().Print(stream);
+      stream << ',';
 
-      if (InetSocketAddress::IsMatchingType (address))
-        {
-          stream << InetSocketAddress::ConvertFrom (address).GetIpv4 () << ',';
-        }
-      else if (Ipv4Address::IsMatchingType (address))
-        {
-          stream << Ipv4Address::ConvertFrom (address) << ',';
-        }
-      else
-        {
-          stream << address.IsMatchingType (0);
-          stream << address << ',';
-        }
       stream << mobility->GetPosition ().x << ',';
       stream << mobility->GetPosition ().y << ',';
       stream << mobility->GetPosition ().z << ',';
@@ -112,7 +117,7 @@ main (int argc, char *argv[])
   CommandLine cmd (__FILE__);
   cmd.Parse (argc, argv);
 
-  uint32_t peripheralNodes = 7;
+  uint32_t peripheralNodes = 3;
 
   //
   // Explicitly create the nodes required by the topology (shown above).
@@ -217,7 +222,7 @@ main (int argc, char *argv[])
 
 #elif 1
   Ptr<ListPositionAllocator> alloc = CreateObject<ListPositionAllocator>();
-  float radius = 5;
+  float radius = 4;
   //For central node
   alloc->Add(Vector(0, 0, 0));
   std::default_random_engine rng(std::random_device{}());
@@ -248,7 +253,7 @@ main (int argc, char *argv[])
   Config::Connect ("/NodeList/*/$ns3::MobilityModel/CourseChange", MakeCallback (&CourseChange));
 
   // Now, do the actual simulation.
-  Simulator::Stop (Seconds (200));
+  Simulator::Stop (Seconds (240));
 
   AsciiTraceHelper ascii;
   wifiPhy.EnablePcap ("UAV", nodes);

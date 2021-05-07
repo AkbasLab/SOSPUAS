@@ -1,5 +1,6 @@
 #include <math.h>
 #include "uav.h"
+#include "main.h"
 
 #include "ns3/udp-server.h"
 #include "ns3/udp-client.h"
@@ -121,6 +122,10 @@ UAV::StartApplication (void)
 
   m_sendEvent = Simulator::Schedule (Seconds(0.0), &UAV::Send, this);
   m_calculateEvent = Simulator::Schedule (Seconds(0.0), &UAV::Calculate, this);
+
+  if (m_uavType == UAVDataType::VIRTUAL_FORCES_CENTRAL_POSITION) {
+    SetColor(m_uavAddress, { 0.3, 0.7, 1.0 });
+  }
 }
 
 void
