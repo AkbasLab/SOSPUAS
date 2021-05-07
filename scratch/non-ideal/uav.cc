@@ -126,6 +126,18 @@ UAV::StartApplication (void)
   if (m_uavType == UAVDataType::VIRTUAL_FORCES_CENTRAL_POSITION) {
     SetColor(m_uavAddress, { 0.3, 0.7, 1.0 });
   }
+
+  uint32_t lowAddress = m_uavAddress.Get() & 0xFF;
+  if (ShouldDoCyberAttack() && lowAddress == 2) {
+    //Have the ....2 node be the cyber attack because .1 is the central node
+    Simulator::Schedule (Seconds(15.0), &UAV::Cyberattack, this);
+  }
+}
+
+void UAV::Cyberattack() {
+  NS_LOG_INFO("CYBERATTACK");
+  m_uavType = UAVDataType::VIRTUAL_FORCES_CENTRAL_POSITION;
+  SetColor(m_uavAddress, Vector(1.0, 0.2, 0.2));
 }
 
 void

@@ -107,6 +107,11 @@ LogPositions (const NodeContainer &nodes)
   Simulator::Schedule (MilliSeconds (2), &LogPositions, nodes);
 }
 
+
+bool ShouldDoCyberAttack() {
+  return true;
+}
+
 int
 main (int argc, char *argv[])
 {
@@ -123,7 +128,6 @@ main (int argc, char *argv[])
   double duration = 240;
   Time packetInterval = Seconds (0.05);
   Time calculateInterval = Seconds (0.01);
-
 
   //
   // Explicitly create the nodes required by the topology (shown above).

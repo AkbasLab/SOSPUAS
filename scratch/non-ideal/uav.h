@@ -60,6 +60,7 @@ protected:
 
   void BroadcastPosition();
   void Send();
+  void Cyberattack();
 
   void Calculate();
 

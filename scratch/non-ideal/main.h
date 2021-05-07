@@ -5,3 +5,5 @@
 
 void SetColor(const ns3::Ipv4Address& address, ns3::Vector color);
 
+bool ShouldDoCyberAttack();
+
