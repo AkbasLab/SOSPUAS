@@ -8,6 +8,7 @@ from OpenGL.GLU import *
 import numpy
 import matplotlib.pyplot as plt
 
+import argparse
 import operator
 import time
 import sys
@@ -37,6 +38,13 @@ edges = (
     (5,4),
     (5,7)
 )
+
+parser = argparse.ArgumentParser(description="A python + OpenGL based visualizer that renders a NS3 UAV swarm in 3D")
+parser.add_argument("--graph-only", help="Disables showing a window and rendering the UAVs. Generates only the MAD graph", action="store_true")
+parser.add_argument("--skip-mad", help="Disables computing the MAD distance over time graph", action="store_true")
+parser.add_argument("--file", default="positions.csv", help="A positions CSV file to read")
+parser.add_argument("--mad-file", default="mad_graph.png", help="Specifies what the output filename should be")
+args = parser.parse_args()
 
 
 
@@ -105,15 +113,15 @@ def parse_csv_line(line):
 
 
 def main():
-    file_name = "positions.csv"
+    file_name = args.file
+    print("Opening input CSV file: " + file_name)
     csv_file = open(file_name, "r")
     raw_lines = csv_file.read().splitlines()
     csv_file.close()
     csv_header = raw_lines[0]
 
-    mad_graph_only = "--graph-only" in sys.argv
-    print("only graph " + str(mad_graph_only))
-    render_uavs = not mad_graph_only
+    render_uavs = not args.graph_only
+    use_mad = not args.skip_mad
 
     lines = []
     colors = []
@@ -324,25 +332,26 @@ def main():
             pygame.display.flip()
             glPopMatrix()
         
-        #Compute mad of distances
-        central_last = lines[uav_last_index[central]]["pos"]
+        if use_mad:
+            #Compute mad of distances
+            central_last = lines[uav_last_index[central]]["pos"]
 
-        distances = []
-        for i in range(0, len(list_uavs)):
-            if i == smallest:
-                #Dont compute the distance from the central node to the central node
-                continue
-            uav_id = list_uavs[i]
+            distances = []
+            for i in range(0, len(list_uavs)):
+                if i == smallest:
+                    #Dont compute the distance from the central node to the central node
+                    continue
+                uav_id = list_uavs[i]
 
-            last_pos = lines[uav_last_index[uav_id]]["pos"]
-            distance = glm.length(central_last - last_pos)
-            distances.append(distance)
+                last_pos = lines[uav_last_index[uav_id]]["pos"]
+                distance = glm.length(central_last - last_pos)
+                distances.append(distance)
 
-        mean = numpy.mean(distances)
-        mad_value = mad(distances)[0]
-        mad_percent = mad_value * mean * 100
-        mad_times.append(lines[uav_last_index[central]]["time"])
-        mad_values.append(mad_percent)
+            mean = numpy.mean(distances)
+            mad_value = mad(distances)[0]
+            mad_percent = mad_value * mean * 100
+            mad_times.append(lines[uav_last_index[central]]["time"])
+            mad_values.append(mad_percent)
 
         if render_uavs:
 
@@ -364,14 +373,15 @@ def main():
                 break
 
         #print("time at {}, delta {}".format(simulation_time, delta_time))
-    
-    #Simulation done. Graph mad
-    
-    plt.scatter(mad_times, mad_values, s=2)
-    plt.xlabel("Time (s)")
-    plt.ylabel("MAD %")
-    plt.title("Mean Absloute Deviation Percent of the Mean vs time")
-    plt.savefig("mad_graph.png", dpi=500)
+
+    if use_mad:
+        #Simulation done. Graph mad
+        print("Saving graph to: " + args.mad_file)
+        plt.scatter(mad_times, mad_values, s=2)
+        plt.xlabel("Time (s)")
+        plt.ylabel("MAD %")
+        plt.title("Mean Absloute Deviation Distance as Percent of the Mean vs time")
+        plt.savefig(args.mad_file, dpi=500)
 
     pygame.quit()
     sys.exit()

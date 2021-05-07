@@ -104,7 +104,7 @@ LogPositions (const NodeContainer &nodes)
       stream << std::endl;
     }
 
-  Simulator::Schedule (MilliSeconds (1), &LogPositions, nodes);
+  Simulator::Schedule (MilliSeconds (2), &LogPositions, nodes);
 }
 
 int
@@ -117,7 +117,13 @@ main (int argc, char *argv[])
   CommandLine cmd (__FILE__);
   cmd.Parse (argc, argv);
 
-  uint32_t peripheralNodes = 3;
+  //Parameters
+  uint32_t peripheralNodes = 7;
+  double spawnRadius = 5;
+  double duration = 240;
+  Time packetInterval = Seconds (0.05);
+  Time calculateInterval = Seconds (0.01);
+
 
   //
   // Explicitly create the nodes required by the topology (shown above).
@@ -174,8 +180,6 @@ main (int argc, char *argv[])
 
   NS_LOG_INFO ("Create Applications. Server address is: " << serverAddress);
 
-  Time packetInterval = Seconds (0.05);
-  Time calculateInterval = Seconds (0.01);
   uint16_t port = 4000;
 
   UAVHelper central (serverAddress, port, UAVDataType::VIRTUAL_FORCES_CENTRAL_POSITION,
@@ -222,16 +226,15 @@ main (int argc, char *argv[])
 
 #elif 1
   Ptr<ListPositionAllocator> alloc = CreateObject<ListPositionAllocator>();
-  float radius = 4;
   //For central node
   alloc->Add(Vector(0, 0, 0));
   std::default_random_engine rng(std::random_device{}());
-  std::uniform_real_distribution<double> dist(-radius, radius);
+  std::uniform_real_distribution<double> dist(-spawnRadius, spawnRadius);
 
   uint32_t count = 0;
   while (count < peripheralNodes) {
     Vector pos = { dist(rng), dist(rng), dist(rng) };
-    if (pos.GetLength() < radius) {
+    if (pos.GetLength() < spawnRadius) {
       alloc->Add(pos);
       count++;
     }
@@ -253,7 +256,7 @@ main (int argc, char *argv[])
   Config::Connect ("/NodeList/*/$ns3::MobilityModel/CourseChange", MakeCallback (&CourseChange));
 
   // Now, do the actual simulation.
-  Simulator::Stop (Seconds (240));
+  Simulator::Stop (Seconds (duration));
 
   AsciiTraceHelper ascii;
   wifiPhy.EnablePcap ("UAV", nodes);
