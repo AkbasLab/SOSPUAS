@@ -281,8 +281,8 @@ T map(T value, T leftMin, T leftMax, T rightMin, T rightMax) {
 
 
 
-const double VIRTUAL_FORCES_A = 0.2;
-const double VIRTUAL_FORCES_R = 1.2;
+const double VIRTUAL_FORCES_A = 0.3;
+const double VIRTUAL_FORCES_R = 1.5;
 
 void UAV::Calculate() {
   auto mobilityModel = this->GetNode()->GetObject<ns3::WaypointMobilityModel>();
@@ -333,8 +333,8 @@ void UAV::Calculate() {
 
   //Slight velocity dampening if high enough
   double velocity = m_velocity.GetLength();
-  const double minDampen = 0.1;
-  const double maxDampen = 0.5;
+  const double minDampen = 0.2;
+  const double maxDampen = 1.0;
   //Dampen at most 50% of overall velocity per second
   double maxDampenValue = 0.5 * dt;
 

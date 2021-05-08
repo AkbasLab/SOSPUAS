@@ -124,11 +124,11 @@ main (int argc, char *argv[])
 
   //Parameters
   uint32_t peripheralNodes = 7;
-  double spawnRadius = 5;
+  double spawnRadius = 4;
   double duration = 180;
-  Time packetInterval = Seconds (0.05);
+  Time packetInterval = Seconds (1.5);
   Time calculateInterval = Seconds (0.01);
-  uint64_t seed = 4576543535377;
+  uint64_t seed = 7765457654377;
 
   //
   // Explicitly create the nodes required by the topology (shown above).
