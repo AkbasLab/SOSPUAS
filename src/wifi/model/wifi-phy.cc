@@ -360,7 +360,9 @@ WifiPhy::GetTypeId (void)
                    MakeUintegerChecker<uint8_t> (0, 7))
     .AddAttribute ("RxSensitivity",
                    "The energy of a received signal should be higher than "
-                   "this threshold (dBm) for the PHY to detect the signal.",
+                   "this threshold (dBm) for the PHY to detect the signal. "
+                   "This threshold refers to a width of 20 MHz and will be "
+                   "scaled to match the width of the received signal.",
                    DoubleValue (-101.0),
                    MakeDoubleAccessor (&WifiPhy::SetRxSensitivity,
                                        &WifiPhy::GetRxSensitivity),
@@ -1620,6 +1622,12 @@ WifiPhy::CalculateTxDuration (uint32_t size, const WifiTxVector& txVector, WifiP
 }
 
 Time
+WifiPhy::CalculateTxDuration (Ptr<const WifiPsdu> psdu, const WifiTxVector& txVector, WifiPhyBand band)
+{
+  return CalculateTxDuration (GetWifiConstPsduMap (psdu, txVector), txVector, band);
+}
+
+Time
 WifiPhy::CalculateTxDuration (WifiConstPsduMap psduMap, const WifiTxVector& txVector, WifiPhyBand band)
 {
   return GetStaticPhyEntity (txVector.GetModulationClass ())->CalculateTxDuration (psduMap, txVector, band);
@@ -1756,13 +1764,17 @@ WifiPhy::NotifyMonitorSniffTx (Ptr<const WifiPsdu> psdu, uint16_t channelFreqMhz
     }
 }
 
+WifiConstPsduMap
+WifiPhy::GetWifiConstPsduMap (Ptr<const WifiPsdu> psdu, const WifiTxVector& txVector)
+{
+  return GetStaticPhyEntity (txVector.GetModulationClass ())->GetWifiConstPsduMap (psdu, txVector);
+}
+
 void
 WifiPhy::Send (Ptr<const WifiPsdu> psdu, const WifiTxVector& txVector)
 {
   NS_LOG_FUNCTION (this << *psdu << txVector);
-  WifiConstPsduMap psdus;
-  psdus.insert (std::make_pair (SU_STA_ID, psdu));
-  Send (psdus, txVector);
+  Send (GetWifiConstPsduMap (psdu, txVector), txVector);
 }
 
 void
@@ -1812,6 +1824,7 @@ WifiPhy::Send (WifiConstPsduMap psdus, WifiTxVector txVector)
       it.second->CancelRunningEndPreambleDetectionEvents ();
     }
   m_currentPreambleEvents.clear ();
+  m_endPhyRxEvent.Cancel ();
 
   if (m_powerRestricted)
     {
@@ -2154,7 +2167,7 @@ void
 WifiPhy::AbortCurrentReception (WifiPhyRxfailureReason reason)
 {
   NS_LOG_FUNCTION (this << reason);
-  if (reason != OBSS_PD_CCA_RESET || m_currentEvent) //Otherwise abort has already been called just before with FILTERED reason
+  if (reason != OBSS_PD_CCA_RESET || m_currentEvent) //Otherwise abort has already been called previously
     {
       for (auto & phyEntity : m_phyEntities)
         {
@@ -2184,28 +2197,24 @@ WifiPhy::AbortCurrentReception (WifiPhyRxfailureReason reason)
         }
       m_currentEvent = 0;
     }
-  else if (reason == OBSS_PD_CCA_RESET)
-    {
-      m_state->SwitchFromRxAbort ();
-    }
 }
 
 void
 WifiPhy::ResetCca (bool powerRestricted, double txPowerMaxSiso, double txPowerMaxMimo)
 {
   NS_LOG_FUNCTION (this << powerRestricted << txPowerMaxSiso << txPowerMaxMimo);
-  m_powerRestricted = powerRestricted;
-  m_txPowerMaxSiso = txPowerMaxSiso;
-  m_txPowerMaxMimo = txPowerMaxMimo;
   // This method might be called multiple times when receiving TB PPDUs with a BSS color
   // different than the one of the receiver. The first time this method is called, the call
   // to AbortCurrentReception sets m_currentEvent to 0. Therefore, we need to check whether
   // m_currentEvent is not 0 before executing the instructions below.
   if (m_currentEvent != 0)
     {
+      m_powerRestricted = powerRestricted;
+      m_txPowerMaxSiso = txPowerMaxSiso;
+      m_txPowerMaxMimo = txPowerMaxMimo;
       NS_ASSERT ((m_currentEvent->GetEndTime () - Simulator::Now ()).IsPositive ());
       Simulator::Schedule (m_currentEvent->GetEndTime () - Simulator::Now (), &WifiPhy::EndReceiveInterBss, this);
-      AbortCurrentReception (OBSS_PD_CCA_RESET);
+      Simulator::ScheduleNow (&WifiPhy::AbortCurrentReception, this, OBSS_PD_CCA_RESET); //finish processing field first
     }
 }
 

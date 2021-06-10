@@ -28,7 +28,6 @@
 #include "ns3/sta-wifi-mac.h"
 #include "ns3/ap-wifi-mac.h"
 #include "ns3/wifi-utils.h"
-#include "ns3/uinteger.h"
 #include "ns3/simulator.h"
 #include "ns3/log.h"
 #include "ns3/assert.h"
@@ -477,9 +476,7 @@ HePhy::GetBssColor (void) const
       Ptr<HeConfiguration> heConfiguration = device->GetHeConfiguration ();
       if (heConfiguration)
         {
-          UintegerValue bssColorAttribute;
-          heConfiguration->GetAttribute ("BssColor", bssColorAttribute);
-          bssColor = bssColorAttribute.Get ();
+          bssColor = heConfiguration->GetBssColor ();
         }
     }
   return bssColor;
@@ -515,28 +512,30 @@ HePhy::ProcessSigA (Ptr<Event> event, PhyFieldRxStatus status)
   HeSigAParameters params;
   params.rssiW = GetRxPowerWForPpdu (event);
   params.bssColor = event->GetTxVector ().GetBssColor ();
-  Simulator::ScheduleNow (&HePhy::NotifyEndOfHeSigA, this, params); //finish field processing first
+  NotifyEndOfHeSigA (params); //if OBSS_PD CCA_RESET, set power restriction first and wait till field is processed before switching to IDLE
 
   if (status.isSuccess)
     {
+      //Check if PPDU is filtered based on the BSS color
+      uint8_t myBssColor = GetBssColor ();
+      uint8_t rxBssColor = event->GetTxVector ().GetBssColor ();
+      if (myBssColor != 0 && rxBssColor != 0 && myBssColor != rxBssColor)
+        {
+          NS_LOG_DEBUG ("The BSS color of this PPDU (" << +rxBssColor << ") does not match the device's (" << +myBssColor << "). The PPDU is filtered.");
+          return PhyFieldRxStatus (false, FILTERED, DROP);
+        }
+
       Ptr<const WifiPpdu> ppdu = event->GetPpdu ();
       if (event->GetTxVector ().GetPreambleType () == WIFI_PREAMBLE_HE_TB)
         {
           m_currentHeTbPpduUid = ppdu->GetUid (); //to be able to correctly schedule start of OFDMA payload
         }
 
-      //Check if PPDU is filtered based on the BSS color
-      uint8_t bssColor = GetBssColor ();
-      if (bssColor != 0 && bssColor != event->GetTxVector ().GetBssColor ())
-        {
-          NS_LOG_DEBUG ("The BSS color of this PPDU (" << +event->GetTxVector ().GetBssColor () << ") does not match the device's (" << +bssColor << "). The PPDU is filtered.");
-          return PhyFieldRxStatus (false, FILTERED, ABORT);
-        }
       if (ppdu->GetType () != WIFI_PPDU_TYPE_DL_MU && !GetAddressedPsduInPpdu (ppdu)) //Final decision on STA-ID correspondence of DL MU is delayed to end of SIG-B
         {
           NS_ASSERT (ppdu->GetType () == WIFI_PPDU_TYPE_UL_MU);
           NS_LOG_DEBUG ("No PSDU addressed to that PHY in the received MU PPDU. The PPDU is filtered.");
-          return PhyFieldRxStatus (false, FILTERED, ABORT);
+          return PhyFieldRxStatus (false, FILTERED, DROP);
         }
     }
   return status;
@@ -567,7 +566,7 @@ HePhy::ProcessSigB (Ptr<Event> event, PhyFieldRxStatus status)
       if (!GetAddressedPsduInPpdu (event->GetPpdu ()))
         {
           NS_LOG_DEBUG ("No PSDU addressed to that PHY in the received MU PPDU. The PPDU is filtered.");
-          return PhyFieldRxStatus (false, FILTERED, ABORT);
+          return PhyFieldRxStatus (false, FILTERED, DROP);
         }
     }
   return status;
@@ -1178,6 +1177,20 @@ bool
 HePhy::IsModeAllowed (uint16_t /* channelWidth */, uint8_t /* nss */)
 {
   return true;
+}
+
+WifiConstPsduMap
+HePhy::GetWifiConstPsduMap (Ptr<const WifiPsdu> psdu, const WifiTxVector& txVector) const
+{
+  uint16_t staId = SU_STA_ID;
+
+  if (txVector.IsUlMu ())
+    {
+      NS_ASSERT (txVector.GetHeMuUserInfoMap ().size () == 1);
+      staId = txVector.GetHeMuUserInfoMap ().begin ()->first;
+    }
+
+  return WifiConstPsduMap ({std::make_pair (staId, psdu)});
 }
 
 uint32_t
