@@ -42,3 +42,5 @@ build/
 version.cache
 peda-session-*
 
+positions.csv
+

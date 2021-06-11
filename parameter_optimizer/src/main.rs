@@ -42,6 +42,17 @@ impl fmt::Display for GitError {
     }
 }
 
+macro_rules! collection {
+    // map-like
+    ($($k:expr => $v:expr),* $(,)?) => {
+        std::iter::Iterator::collect(std::array::IntoIter::new([$(($k, $v),)*]))
+    };
+    // set-like
+    ($($v:expr),* $(,)?) => {
+        std::iter::Iterator::collect(std::array::IntoIter::new([$($v,)*]))
+    };
+}
+
 fn run_git_command(args: &[&str], current_dir: &str) -> Result<String, Error> {
     let mut process = Command::new("git")
         .current_dir(current_dir)
@@ -80,10 +91,15 @@ fn main() {
     };
     if needs_configure {
         println!("Running configure");
-        run_waf_command(path, "configure --build-profile=optimized").unwrap();
+        run_waf_command(
+            path,
+            "configure --build-profile=optimized",
+            collection!("CXXFLAGS" => "-Wall"),
+        )
+        .unwrap();
     }
 
-    run_waf_command(path, "--run non-ideal").unwrap();
+    run_waf_command(path, "--run non-ideal", collection!("" => "")).unwrap();
 }
 
 fn setup_repo(info: &RepoInfo) -> Result<bool, Error> {
@@ -105,7 +121,11 @@ fn setup_repo(info: &RepoInfo) -> Result<bool, Error> {
     }
 }
 
-fn run_waf_command(path: &str, command: &str) -> Result<(), Error> {
+fn run_waf_command(
+    path: &str,
+    command: &str,
+    env: std::collections::HashMap<&str, &str>,
+) -> Result<(), Error> {
     let mut waf_path = std::fs::canonicalize(path).unwrap().to_owned();
     waf_path.push("waf");
     println!("Running waf at {}", waf_path.to_str().unwrap());
@@ -114,6 +134,7 @@ fn run_waf_command(path: &str, command: &str) -> Result<(), Error> {
         .current_dir(path)
         .arg("-c")
         .arg(format!("{} {}", waf_path.to_str().unwrap(), command))
+        .envs(env)
         .spawn()?
         .wait()?
         .success()
