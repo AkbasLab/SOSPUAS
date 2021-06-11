@@ -112,6 +112,8 @@ bool ShouldDoCyberAttack() {
   return false;
 }
 
+SimulationParameters s_Parameters;
+
 int
 main (int argc, char *argv[])
 {
@@ -119,23 +121,23 @@ main (int argc, char *argv[])
   LogComponentEnable ("UdpClient", LOG_LEVEL_INFO);
   LogComponentEnable ("UdpServer", LOG_LEVEL_INFO);
 
-  CommandLine cmd (__FILE__);
-  cmd.Parse (argc, argv);
-
   //Parameters
-  uint32_t peripheralNodes = 7;
-  double spawnRadius = 4;
-  double duration = 180;
-  Time packetInterval = Seconds (1.5);
-  Time calculateInterval = Seconds (0.01);
-  uint64_t seed = 7765457654377;
+  CommandLine cmd (__FILE__);
+
+  cmd.AddValue("seed", "Seed for the random number generator when calculating initial positions", s_Parameters.seed);
+  cmd.AddValue("pNodes", "The number of peripheral nodes to simulate", s_Parameters.peripheralNodes);
+  cmd.AddValue("spawnRadius", "How large of a radius to spawn the nodes in", s_Parameters.spawnRadius);
+  cmd.AddValue("duration", "How long to run the simulation for (seconds)", s_Parameters.duration);
+  cmd.AddValue("packetInterval", "How often UAV's send location packets to one another", s_Parameters.packetInterval);
+  cmd.AddValue("calculateInterval", "How often the velocity of each UAV is re calculated", s_Parameters.calculateInterval);
+  cmd.Parse (argc, argv);
 
   //
   // Explicitly create the nodes required by the topology (shown above).
   //
   NS_LOG_INFO ("Create nodes.");
   NodeContainer nodes;
-  nodes.Create (1 + peripheralNodes);
+  nodes.Create (1 + s_Parameters.peripheralNodes);
 
   NS_LOG_INFO ("Create channels.");
 
@@ -188,14 +190,14 @@ main (int argc, char *argv[])
   uint16_t port = 4000;
 
   UAVHelper central (serverAddress, port, UAVDataType::VIRTUAL_FORCES_CENTRAL_POSITION,
-                     packetInterval, calculateInterval, 1 + peripheralNodes);
+                     Seconds(s_Parameters.packetInterval), Seconds(s_Parameters.calculateInterval), 1 + s_Parameters.peripheralNodes);
 
   ApplicationContainer apps = central.Install (nodes.Get (0));
   apps.Get (0)->SetAttribute ("ClientAddress", Ipv4AddressValue (serverAddress));
   apps.Start (Seconds (0.0));
 
-  UAVHelper client (serverAddress, port, UAVDataType::VIRTUAL_FORCES_POSITION, packetInterval,
-                    calculateInterval, 1 + peripheralNodes);
+  UAVHelper client (serverAddress, port, UAVDataType::VIRTUAL_FORCES_POSITION, Seconds(s_Parameters.packetInterval),
+                    Seconds(s_Parameters.calculateInterval), 1 + s_Parameters.peripheralNodes);
 #if 0
     uint32_t startCount = 2;
 #else
@@ -233,14 +235,14 @@ main (int argc, char *argv[])
   Ptr<ListPositionAllocator> alloc = CreateObject<ListPositionAllocator>();
   //For central node
   alloc->Add(Vector(0, 0, 0));
-  std::default_random_engine rng(seed);
+  std::default_random_engine rng(s_Parameters.seed);
   //std::default_random_engine rng(std::random_device{}());
-  std::uniform_real_distribution<double> dist(-spawnRadius, spawnRadius);
+  std::uniform_real_distribution<double> dist(-s_Parameters.spawnRadius, s_Parameters.spawnRadius);
 
   uint32_t count = 0;
-  while (count < peripheralNodes) {
+  while (count < s_Parameters.peripheralNodes) {
     Vector pos = { dist(rng), dist(rng), dist(rng) };
-    if (pos.GetLength() < spawnRadius) {
+    if (pos.GetLength() < s_Parameters.spawnRadius) {
       alloc->Add(pos);
       count++;
     }
@@ -262,14 +264,14 @@ main (int argc, char *argv[])
   Config::Connect ("/NodeList/*/$ns3::MobilityModel/CourseChange", MakeCallback (&CourseChange));
 
   // Now, do the actual simulation.
-  Simulator::Stop (Seconds (duration));
+  NS_LOG_INFO("Running simulation for " << s_Parameters.duration << " seconds...");
+  Simulator::Stop (Seconds (s_Parameters.duration));
 
   AsciiTraceHelper ascii;
   wifiPhy.EnablePcap ("UAV", nodes);
 
   Simulator::Schedule (Seconds (0), &LogPositions, nodes);
 
-  NS_LOG_INFO ("Run Simulation.");
   Simulator::Run ();
   NS_LOG_INFO ("Run Finished.");
 
