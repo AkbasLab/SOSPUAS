@@ -143,10 +143,14 @@ def main():
     #Mapping between a uav id and the index of the latest line that assert's a uav's position that is before the current re-simulation's time
     #Used for interpolating each uav's position each frame
     uav_last_index = {}
+    uav_before_indices = {}
+    uav_after_indices = {}
 
     for uav in uavs:
         #Start searching for times at the start of the file
-        uav_last_index[uav] = -0
+        uav_last_index[uav] = 0
+        uav_before_indices[uav] = None
+        uav_after_indices[uav] = None
 
     uav_colors = {}
 
@@ -184,12 +188,13 @@ def main():
         last_time_print = 0
 
     last_time = time.time()
-    delta_time = 0.0
+    delta_time = None
     simulation_time = 0.0
     exit_loop = False
     
     mad_times = []
     mad_values = []
+    mad_speeds = []
 
     list_uavs = list(uavs)
     smallest = -1
@@ -299,6 +304,9 @@ def main():
             else:
                 uav_last_index[uav] = search_index
 
+            uav_before_indices[uav] = before_index
+            uav_after_indices[uav] = after_index
+
             #print("Before {}, after {}".format(before_index, after_index))
 
             if render_uavs:
@@ -306,7 +314,7 @@ def main():
                     #We have no position data nothing to do
                     continue
                 elif before_index != None and after_index == None:
-                    #There are no more data points after this point in the simulation. Lock uav's to thier last known position
+                    #There are no more data points after this point in the simulation. Lock uav's to their last known position
                     pos = lines[before_index]["pos"]
                 elif before_index == None and after_index != None:
                     #There are no data points before here so for all we know the UAV was always here (should be unlikely in pratice)
@@ -337,11 +345,25 @@ def main():
             central_last = lines[uav_last_index[central]]["pos"]
 
             distances = []
+            speed_total = 0.0
+            counted_for_speed = 0
             for i in range(0, len(list_uavs)):
+                uav_id = list_uavs[i]
+                if uav_before_indices[uav_id] != None and uav_after_indices[uav_id] != None and delta_time != None:
+                    #Only compute speed when we have a initial and final position and when we have a delta time
+                    a_pos =  lines[uav_before_indices[uav_id]]["pos"]
+                    a_time = lines[uav_before_indices[uav_id]]["time"]
+
+                    b_pos =  lines[uav_after_indices[uav_id]]["pos"]
+                    b_time = lines[uav_after_indices[uav_id]]["time"]
+
+                    speed = abs(glm.length(b_pos - a_pos) / (b_time - a_time))
+                    speed_total += speed
+                    counted_for_speed += 1
+
                 if i == smallest:
                     #Dont compute the distance from the central node to the central node
                     continue
-                uav_id = list_uavs[i]
 
                 last_pos = lines[uav_last_index[uav_id]]["pos"]
                 distance = glm.length(central_last - last_pos)
@@ -352,18 +374,21 @@ def main():
             mad_percent = mad_value * mean * 100
             mad_times.append(lines[uav_last_index[central]]["time"])
             mad_values.append(mad_percent)
+            if counted_for_speed == 0:
+                mad_speeds.append(0)
+            else:
+                mad_speeds.append(speed_total / counted_for_speed)
 
         if render_uavs:
 
             clock.tick(target_fps)
             now = time.time()
-            delta_time = now - last_time
+            delta_time = (now - last_time) * simulation_speed
             last_time = now
 
-            simulation_time += delta_time * simulation_speed
         else:
             #Fixed simulation steps when we arent rendering in real time
-            simulation_time += 1.0 / target_fps
+            delta_time = 1.0 / target_fps
             if simulation_time - last_time_print > 15:
                 print("Simulation at " + str(simulation_time))
                 last_time_print = simulation_time
@@ -372,6 +397,7 @@ def main():
                 print("Finished MAD data collection")
                 break
 
+        simulation_time += delta_time
         #print("time at {}, delta {}".format(simulation_time, delta_time))
 
     if use_mad:
@@ -380,8 +406,24 @@ def main():
         plt.scatter(mad_times, mad_values, s=2)
         plt.xlabel("Time (s)")
         plt.ylabel("MAD %")
-        plt.title("Mean Absloute Deviation Distance as Percent of the Mean vs time")
+        plt.title("Mean Absolute Deviation Distance as Percent of the Mean vs Time")
         plt.savefig(args.mad_file, dpi=500)
+
+        plt.clf()
+        plt.scatter(mad_times, mad_speeds, s=2)
+        plt.xlabel("Time (s)")
+        plt.ylabel("Average Network Speed")
+        plt.title("Average Network Speed vs Time")
+        plt.savefig("speed-" + args.mad_file, dpi=500)
+
+        with open("all-data.csv", "w") as f:
+            f.write("Time,Mad Distance,Average Velocity")
+            for i in range(0, len(mad_times)):
+                currrent_time = mad_times[i]
+                mad_distance = mad_values[i]
+                speed = mad_speeds[i]
+                f.write("{},{},{}\n".format(currrent_time, mad_distance, speed))
+
 
     pygame.quit()
     sys.exit()

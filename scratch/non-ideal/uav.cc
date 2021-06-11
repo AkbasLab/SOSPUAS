@@ -281,9 +281,6 @@ T map(T value, T leftMin, T leftMax, T rightMin, T rightMax) {
 
 
 
-const double VIRTUAL_FORCES_A = 0.3;
-const double VIRTUAL_FORCES_R = 1.5;
-
 void UAV::Calculate() {
   auto mobilityModel = this->GetNode()->GetObject<ns3::WaypointMobilityModel>();
 
@@ -324,7 +321,7 @@ void UAV::Calculate() {
   double dt = m_calculateInterval.GetSeconds();
   double mass = 1;
   //a=F/m
-  Vector acceleration = (attraction * VIRTUAL_FORCES_A + repulsion * VIRTUAL_FORCES_R) / mass;
+  Vector acceleration = (attraction * s_Parameters.a + repulsion * s_Parameters.r) / mass;
   m_velocity += acceleration * dt;
 
   auto now = Simulator::Now();

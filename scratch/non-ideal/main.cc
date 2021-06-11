@@ -104,7 +104,7 @@ LogPositions (const NodeContainer &nodes)
       stream << std::endl;
     }
 
-  Simulator::Schedule (MilliSeconds (2), &LogPositions, nodes);
+  Simulator::Schedule (MilliSeconds (50), &LogPositions, nodes);
 }
 
 
@@ -124,6 +124,8 @@ main (int argc, char *argv[])
   //Parameters
   CommandLine cmd (__FILE__);
 
+  cmd.AddValue("a", "Attraction constant between central and peripheral nondes", s_Parameters.a);
+  cmd.AddValue("r", "Repultion constant between peripheral nodes", s_Parameters.r);
   cmd.AddValue("seed", "Seed for the random number generator when calculating initial positions", s_Parameters.seed);
   cmd.AddValue("pNodes", "The number of peripheral nodes to simulate", s_Parameters.peripheralNodes);
   cmd.AddValue("spawnRadius", "How large of a radius to spawn the nodes in", s_Parameters.spawnRadius);

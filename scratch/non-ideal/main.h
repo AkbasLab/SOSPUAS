@@ -9,6 +9,9 @@ bool ShouldDoCyberAttack();
 
 struct SimulationParameters
 {
+  double a = 1.0;
+  double r = 1.0;
+
   uint64_t seed = 0;
   uint32_t peripheralNodes = 7;
   double spawnRadius = 4;

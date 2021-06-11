@@ -99,6 +99,10 @@ fn main() {
         .unwrap();
     }
 
+    run_optimization(path);
+}
+
+fn run_optimization(path: &str) {
     run_waf_command(path, "--run non-ideal", collection!("" => "")).unwrap();
 }
 
