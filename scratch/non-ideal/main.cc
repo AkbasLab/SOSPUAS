@@ -58,13 +58,14 @@ CourseChange (std::string _unused, Ptr<const MobilityModel> mobility)
 
 std::unique_ptr<std::ofstream> s_csvFile;
 
-
-void SetColor(const Ipv4Address& address, Vector color) {
+void
+SetColor (const Ipv4Address &address, Vector color)
+{
   auto &stream = *s_csvFile;
   stream << "color,";
   stream << Simulator::Now ().GetSeconds () << ',';
 
-  address.Print(stream);
+  address.Print (stream);
   stream << ',';
 
   stream << color.x << ',';
@@ -73,12 +74,14 @@ void SetColor(const Ipv4Address& address, Vector color) {
   stream << std::endl;
 }
 
+SimulationParameters s_Parameters;
+
 static void
 LogPositions (const NodeContainer &nodes)
 {
   if (!s_csvFile)
     {
-      s_csvFile.reset (new std::ofstream ("positions.csv"));
+      s_csvFile.reset (new std::ofstream (s_Parameters.positionsFile));
       const char header[] = "Time (s),IP Address, X (m), Y (m), Z (m)";
       s_csvFile->write (header, sizeof (header));
     }
@@ -89,13 +92,13 @@ LogPositions (const NodeContainer &nodes)
     {
       Ptr<Node> node = nodes.Get (i);
       auto mobility = node->GetObject<ns3::WaypointMobilityModel> (MobilityModel::GetTypeId ());
-      auto uav = node->GetApplication(0);
+      auto uav = node->GetApplication (0);
 
       stream << Simulator::Now ().GetSeconds () << ',';
 
       Ipv4AddressValue addressValue;
-      uav->GetAttribute("ClientAddress", addressValue);
-      addressValue.Get().Print(stream);
+      uav->GetAttribute ("ClientAddress", addressValue);
+      addressValue.Get ().Print (stream);
       stream << ',';
 
       stream << mobility->GetPosition ().x << ',';
@@ -107,12 +110,11 @@ LogPositions (const NodeContainer &nodes)
   Simulator::Schedule (MilliSeconds (50), &LogPositions, nodes);
 }
 
-
-bool ShouldDoCyberAttack() {
+bool
+ShouldDoCyberAttack ()
+{
   return false;
 }
-
-SimulationParameters s_Parameters;
 
 int
 main (int argc, char *argv[])
@@ -124,14 +126,22 @@ main (int argc, char *argv[])
   //Parameters
   CommandLine cmd (__FILE__);
 
-  cmd.AddValue("a", "Attraction constant between central and peripheral nondes", s_Parameters.a);
-  cmd.AddValue("r", "Repultion constant between peripheral nodes", s_Parameters.r);
-  cmd.AddValue("seed", "Seed for the random number generator when calculating initial positions", s_Parameters.seed);
-  cmd.AddValue("pNodes", "The number of peripheral nodes to simulate", s_Parameters.peripheralNodes);
-  cmd.AddValue("spawnRadius", "How large of a radius to spawn the nodes in", s_Parameters.spawnRadius);
-  cmd.AddValue("duration", "How long to run the simulation for (seconds)", s_Parameters.duration);
-  cmd.AddValue("packetInterval", "How often UAV's send location packets to one another", s_Parameters.packetInterval);
-  cmd.AddValue("calculateInterval", "How often the velocity of each UAV is re calculated", s_Parameters.calculateInterval);
+  cmd.AddValue ("a", "Attraction constant between central and peripheral nondes", s_Parameters.a);
+  cmd.AddValue ("r", "Repultion constant between peripheral nodes", s_Parameters.r);
+  cmd.AddValue ("seed", "Seed for the random number generator when calculating initial positions",
+                s_Parameters.seed);
+  cmd.AddValue ("pNodes", "The number of peripheral nodes to simulate",
+                s_Parameters.peripheralNodes);
+  cmd.AddValue ("spawnRadius", "How large of a radius to spawn the nodes in",
+                s_Parameters.spawnRadius);
+  cmd.AddValue ("duration", "How long to run the simulation for (seconds)", s_Parameters.duration);
+  cmd.AddValue ("packetInterval", "How often UAV's send location packets to one another",
+                s_Parameters.packetInterval);
+  cmd.AddValue ("calculateInterval", "How often the velocity of each UAV is re calculated",
+                s_Parameters.calculateInterval);
+
+  cmd.AddValue ("positionsFile", "Where to write uav positions to during the simulation",
+                s_Parameters.positionsFile);
   cmd.Parse (argc, argv);
 
   //
@@ -192,14 +202,16 @@ main (int argc, char *argv[])
   uint16_t port = 4000;
 
   UAVHelper central (serverAddress, port, UAVDataType::VIRTUAL_FORCES_CENTRAL_POSITION,
-                     Seconds(s_Parameters.packetInterval), Seconds(s_Parameters.calculateInterval), 1 + s_Parameters.peripheralNodes);
+                     Seconds (s_Parameters.packetInterval),
+                     Seconds (s_Parameters.calculateInterval), 1 + s_Parameters.peripheralNodes);
 
   ApplicationContainer apps = central.Install (nodes.Get (0));
   apps.Get (0)->SetAttribute ("ClientAddress", Ipv4AddressValue (serverAddress));
   apps.Start (Seconds (0.0));
 
-  UAVHelper client (serverAddress, port, UAVDataType::VIRTUAL_FORCES_POSITION, Seconds(s_Parameters.packetInterval),
-                    Seconds(s_Parameters.calculateInterval), 1 + s_Parameters.peripheralNodes);
+  UAVHelper client (serverAddress, port, UAVDataType::VIRTUAL_FORCES_POSITION,
+                    Seconds (s_Parameters.packetInterval), Seconds (s_Parameters.calculateInterval),
+                    1 + s_Parameters.peripheralNodes);
 #if 0
     uint32_t startCount = 2;
 #else
@@ -234,21 +246,23 @@ main (int argc, char *argv[])
   mobility.SetPositionAllocator (alloc);
 
 #elif 1
-  Ptr<ListPositionAllocator> alloc = CreateObject<ListPositionAllocator>();
+  Ptr<ListPositionAllocator> alloc = CreateObject<ListPositionAllocator> ();
   //For central node
-  alloc->Add(Vector(0, 0, 0));
-  std::default_random_engine rng(s_Parameters.seed);
+  alloc->Add (Vector (0, 0, 0));
+  std::default_random_engine rng (s_Parameters.seed);
   //std::default_random_engine rng(std::random_device{}());
-  std::uniform_real_distribution<double> dist(-s_Parameters.spawnRadius, s_Parameters.spawnRadius);
+  std::uniform_real_distribution<double> dist (-s_Parameters.spawnRadius, s_Parameters.spawnRadius);
 
   uint32_t count = 0;
-  while (count < s_Parameters.peripheralNodes) {
-    Vector pos = { dist(rng), dist(rng), dist(rng) };
-    if (pos.GetLength() < s_Parameters.spawnRadius) {
-      alloc->Add(pos);
-      count++;
+  while (count < s_Parameters.peripheralNodes)
+    {
+      Vector pos = {dist (rng), dist (rng), dist (rng)};
+      if (pos.GetLength () < s_Parameters.spawnRadius)
+        {
+          alloc->Add (pos);
+          count++;
+        }
     }
-  }
 
   mobility.SetPositionAllocator (alloc);
 
@@ -266,7 +280,7 @@ main (int argc, char *argv[])
   Config::Connect ("/NodeList/*/$ns3::MobilityModel/CourseChange", MakeCallback (&CourseChange));
 
   // Now, do the actual simulation.
-  NS_LOG_INFO("Running simulation for " << s_Parameters.duration << " seconds...");
+  NS_LOG_INFO ("Running simulation for " << s_Parameters.duration << " seconds...");
   Simulator::Stop (Seconds (s_Parameters.duration));
 
   AsciiTraceHelper ascii;
@@ -284,4 +298,3 @@ main (int argc, char *argv[])
   s_csvFile->flush ();
   s_csvFile.reset (nullptr);
 }
-

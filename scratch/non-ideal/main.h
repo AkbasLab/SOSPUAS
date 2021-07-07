@@ -18,7 +18,7 @@ struct SimulationParameters
   double duration = 180;
   double packetInterval = 1.5;
   double calculateInterval = 0.01;
-
+  std::string positionsFile = "positions.csv";
 };
 
 extern SimulationParameters s_Parameters;
