@@ -154,9 +154,9 @@ def main():
 
     uav_colors = {}
 
-    for uav in uavs:
+    for i, uav in enumerate(uavs):
         #All UAV's are white by default
-        uav_colors[uav] = glm.vec3(1, 1, 1)
+        uav_colors[uav] = glm.vec3(1, (i / len(uavs))**1.5, 1)
 
     target_fps = 144
     if render_uavs:

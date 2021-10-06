@@ -79,6 +79,15 @@ UAV::~UAV ()
 {
   NS_LOG_FUNCTION (this);
   m_socket = 0;
+  NS_LOG_INFO("UAV: " << m_uavAddress << "recieved"); 
+  for (const auto& entry : m_packetRecvCount) {
+    NS_LOG_INFO("  " << entry.first << " - " << entry.second);
+  }
+  NS_LOG_INFO("UAV: " << m_uavAddress << "sent"); 
+  for (const auto& entry : m_packetSendCount) {
+    NS_LOG_INFO("  " << entry.first << " - " << entry.second);
+  }
+  NS_LOG_INFO(""); 
 }
 
 void
@@ -175,10 +184,10 @@ UAV::HandleRead (Ptr<Socket> socket)
       if (ipv4Addr == m_uavAddress) {
         continue;
       }
+      m_packetRecvCount[ipv4Addr]++;
       
       UAVData data;
       packet->CopyData(reinterpret_cast<uint8_t*>(&data), sizeof(UAVData));
-      
       
       auto& entry = m_swarmData[ipv4Addr];
       entry.data = data;
@@ -246,8 +255,9 @@ UAV::Send (void)
       //Don't send packets to ourselves
       continue;
     }
-    
-    m_socket->SendTo(reinterpret_cast<uint8_t*>(&payload), sizeof(payload), 0, InetSocketAddress(currentPeer, m_port));
+    auto addr = InetSocketAddress(currentPeer, m_port);
+    m_socket->SendTo(reinterpret_cast<uint8_t*>(&payload), sizeof(payload), 0, addr);
+    m_packetSendCount[currentPeer]++;
     m_sent++;
 
   }

@@ -84,6 +84,9 @@ private:
   uint32_t m_uavCount;
   Ipv4Address m_rootAddress;
 
+  std::map<Ipv4Address, int> m_packetRecvCount;
+  std::map<Ipv4Address, int> m_packetSendCount;
+
   Vector m_velocity = {};
 
   uint32_t m_sent;

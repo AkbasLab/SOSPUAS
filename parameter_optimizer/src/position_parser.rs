@@ -7,7 +7,7 @@ pub use glam::Vec3A as Vec3;
 pub type UavId = IpAddr;
 
 #[derive(Debug, PartialEq, PartialOrd, Clone, Copy)]
-pub struct TimePoint(f32);
+pub struct TimePoint(pub f32);
 
 impl TimePoint {
     fn is_after(&self, other: &TimePoint) -> bool {
@@ -73,6 +73,9 @@ pub struct SimulationData {
     state: HashMap<UavId, InterpolationState>,
     events: Vec<TimedObject<Event>>,
     last_time: Option<TimePoint>,
+
+    pub uavs: HashSet<IpAddr>,
+    pub simulation_length: f32,
 }
 
 impl SimulationData {
@@ -129,22 +132,24 @@ impl SimulationData {
         //will be in the before state because we only know their position in the future
         let mut state = HashMap::new();
         if !frames.is_empty() {
-            for uav in unique_ids {
+            for uav in &unique_ids {
                 for i in 0..frames.len() {
                     let entry = &frames[i];
                     if entry.inner.contains_key(&uav) {
-                        println!("Got uav {} at index {}", uav, i);
-                        state.insert(uav, InterpolationState::Before(i));
+                        state.insert(uav.clone(), InterpolationState::Before(i));
                         break;
                     }
                 }
             }
         }
+        let simulation_length = frames[frames.len() - 1].time.0;
         Ok(Self {
             frames,
             state,
             events,
             last_time: None,
+            simulation_length,
+            uavs: unique_ids,
         })
     }
 
@@ -160,7 +165,6 @@ impl SimulationData {
         let start_index = match self.state.get(&uav) {
             Some(state) => match &state {
                 InterpolationState::Before(index) => {
-                    println!("Got before state");
                     //Last time we were before the old value but we still need to check to see if
                     //we've passed the old one
                     let old_entry = &self.frames[*index];
@@ -172,7 +176,6 @@ impl SimulationData {
                     }
                 }
                 InterpolationState::Interpolate(a, b) => {
-                    println!("Got interp state");
                     if self.frames[*b].time.is_before(&now) {
                         *b
                     } else {
@@ -180,7 +183,6 @@ impl SimulationData {
                     }
                 }
                 InterpolationState::After(index) => {
-                    println!("Got after state");
                     //Easy - we know there are no more values after this one
                     return Some(self.frames[*index].inner.get(&uav).unwrap().pos);
                 }
@@ -190,7 +192,6 @@ impl SimulationData {
         //We are either before or in between two key frames check where the new time unit falls then interpolate
         let mut last_index = start_index;
         for i in (start_index + 1)..self.frames.len() {
-            println!("  Loop {}", i);
             let entry = &self.frames[i];
             if let Some(new_entry) = entry.inner.get(&uav) {
                 last_index = i;
@@ -198,7 +199,6 @@ impl SimulationData {
                     //We found an entry which is after this event
                     //Make sure the last entry is before now
                     let last_frame = &self.frames[start_index];
-                    println!("Last time {:?}", last_frame.time);
                     assert!(last_frame.time.is_before(&now));
                     assert!(last_frame.inner.contains_key(&uav));
                     let a_pos = last_frame.inner.get(&uav).unwrap().pos;

@@ -6,10 +6,14 @@ edition = "2018"
 
 [dependencies]
 tpe = "0.1.1"
+GSL = "4.0.1"
 glam = "0.17.1"
 scan_fmt = "0.2.6"
 assert_approx_eq = "1.1.0"
 rand = "0.8.4"
 num_cpus = "1.13"
 once_cell = "1.8.0"
+ctrlc = "3.1.9"
+atomic_float = "0.1.0"
+plotters = "0.3.1"
 
