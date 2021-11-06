@@ -40,6 +40,7 @@ impl fmt::Display for GitError {
         )
     }
 }
+
 pub fn setup_repo(info: &RepoInfo) -> Result<bool, crate::Error> {
     let mut needs_configure = false;
     if !std::path::Path::new(&info.path).exists() {
@@ -50,7 +51,8 @@ pub fn setup_repo(info: &RepoInfo) -> Result<bool, crate::Error> {
     let current_hash = run_git_command(&["rev-parse", "HEAD"], info.path.as_str())?;
 
     println!("Checkout complete!");
-    if current_hash == info.commit_hash {
+    if current_hash != info.commit_hash {
+        println!("Hashes differ");
         let _ = run_git_command(&["checkout", info.commit_hash.as_str()], info.path.as_str())?;
         //We just checked out a new commit so reconfigure!
         Ok(true)
@@ -67,14 +69,11 @@ fn run_git_command(args: &[&str], current_dir: &str) -> Result<String, crate::Er
 
     let exit_code = process.wait()?;
     let mut buf = String::new();
-    match process.stdout {
-        Some(mut stdout) => {
-            let _ = stdout.read_to_string(&mut buf)?;
-        }
-        None => {}
+    if let Some(mut stdout) = process.stdout {
+        let _ = stdout.read_to_string(&mut buf)?;
     }
     if !exit_code.success() {
-        let message = args.join(" ").to_owned();
+        let message = args.join(" ");
         Err(GitError::new(message, buf, exit_code).into())
     } else {
         Ok(buf)

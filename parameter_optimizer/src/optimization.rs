@@ -29,8 +29,8 @@ struct StateImpl {
 static RUNNING: AtomicBool = AtomicBool::new(true);
 static PATH: OnceCell<String> = OnceCell::new();
 static STATE: OnceCell<State> = OnceCell::new();
-static BASE_ARGUMENTS: [&str; 1] = ["--duration=360"];
-static BEST_FITNESS: atomic_float::AtomicF64 = atomic_float::AtomicF64::new(1000.0);
+static BASE_ARGUMENTS: [&str; 1] = ["--duration=30"];
+static BEST_FITNESS: atomic_float::AtomicF64 = atomic_float::AtomicF64::new(10000.0);
 
 pub fn run(path: &str) {
     ctrlc::set_handler(|| {
@@ -59,9 +59,10 @@ pub fn run(path: &str) {
         ],
         results: Vec::new(),
     })));
+    let default_fitness = BEST_FITNESS.load(Ordering::Relaxed);
     for param in STATE.get().unwrap().lock().unwrap().params.iter_mut() {
         // Fill in default values so parameters start around 1 by default
-        param.optim.tell(1.0, 1000.0).unwrap();
+        param.optim.tell(1.0, default_fitness).unwrap();
     }
 
     let mut threads = Vec::new();
@@ -133,6 +134,22 @@ pub fn run(path: &str) {
 
     let plotting_area = chart.plotting_area();
 
+    //We want to color the points on the scatteragram based on the fitness for that point.
+    //Finding the best fitness and assigning it green, and the worst fitness red, and then
+    //interpolating the rest results is most of the points being green because the fitness scores
+    //are not distributed evenly across the (best_fitness..worst_fitness) range.
+    //To combat this we will make a frequency table so that fitness scores in the top 10-20% range
+    //will be 80-90% green and the rest red. This will be repeated for all points with the step
+    //size being 1/256 * 100 % to make it very smooth
+
+    let step_size = 256;
+    //let mut score_dist = Vec::with_capacity(256);
+    let mut scores_processed = 0;
+    for score in fitness_scores.iter() {
+        
+        scores_processed += 1;
+    }
+
     for (_, data) in pixel_map {
         let fitnesses = &data.0;
         let x = data.1;
@@ -148,28 +165,19 @@ pub fn run(path: &str) {
             .unwrap();
     }
 
-    /*for (x, y, c) in mandelbrot_set(xr, yr, (pw as usize, ph as usize), 100) {
-        if c != 100 {
-            plotting_area
-                .draw_pixel((x, y), &HSLColor(c as f64 / 100.0, 1.0, 0.5))
-                .unwrap();
-        } else {
-            plotting_area.draw_pixel((x, y), &BLACK).unwrap();
-        }
-    }*/
-
     // To avoid the IO failure being ignored silently, we manually call the present function
-    root.present().expect("Unable to write result to file, please make sure 'plotters-doc-data' dir exists under current dir");
+    root.present().expect("Unable to write image to file");
     println!("Result has been saved to {}", out_file_name);
 }
 
 fn run_binary(
     rel_working_dir: &str,
     rel_bin_path: &str,
-    args: &Vec<String>,
+    args: &[String],
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut base = std::env::current_dir().unwrap();
     base.push(rel_working_dir);
+    //We need the NS3 libs to be in LD_LIBRARY_PATH
     let lib_path = {
         let mut base = base.clone();
         base.push("build");
@@ -190,7 +198,7 @@ fn run_binary(
     {
         Ok(())
     } else {
-        Ok(())
+        Err("Error running binary".into())
     }
 }
 
@@ -234,7 +242,7 @@ fn run_thread() {
         };
 
         //Run simulation
-        match run_binary(&ns3_path, "build/scratch/non-ideal/non-ideal", &args) {
+        match run_binary(ns3_path, "build/scratch/non-ideal/non-ideal", &args) {
             Ok(_) => match run_analysis(&positions_file, &param_map, &positions_file) {
                 Ok(_) => {}
                 Err(err) => {
@@ -287,7 +295,7 @@ fn get_fitness(data: &mut SimulationData) -> f64 {
         let mean_velocity = rgsl::statistics::mean(&velocities, 1, velocities.len());
         let mad_percent = mad_of_distance * distances_mean * 100.0;
         let mad_threshold = 30.0;
-        match under_mad_threshold_time.clone() {
+        match under_mad_threshold_time {
             Some(_) => {
                 if mad_percent >= mad_threshold {
                     //Too high to hold streak
@@ -307,7 +315,7 @@ fn get_fitness(data: &mut SimulationData) -> f64 {
 
         time += time_step;
     }
-    let stable_time = under_mad_threshold_time.unwrap_or(360.0) as f64;
+    let stable_time = under_mad_threshold_time.unwrap_or(180.0) as f64;
     let mean_velocity: f64 =
         all_velocities.iter().map(|(_, v)| *v).sum::<f64>() / all_velocities.len() as f64;
 
@@ -326,9 +334,9 @@ fn get_fitness(data: &mut SimulationData) -> f64 {
 }
 
 fn run_analysis(
-    pos_path: &PathBuf,
+    pos_path: &std::path::Path,
     param_map: &HashMap<String, f64>,
-    positions_file: &PathBuf,
+    positions_file: &std::path::Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
     //let start = Instant::now();
     let positions = String::from_utf8(std::fs::read(&pos_path)?)?;
@@ -347,8 +355,8 @@ fn run_analysis(
     if fitness < old_fitness {
         //If multiple threads get in here we don't really care...
         BEST_FITNESS.store(fitness, Ordering::Relaxed);
-        let src = positions_file.clone();
-        let mut dest = positions_file.clone();
+        let src = positions_file;
+        let mut dest = PathBuf::from(positions_file);
         dest.pop(); //Pop positions csv file name
         dest.push("out");
         dest.push(format!("{}.csv", fitness));
@@ -363,9 +371,5 @@ fn run_analysis(
             err
         );
     }
-    /*println!(
-        "Parsing took: {} ms",
-        (Instant::now() - start).as_micros() as f64 / 1000.0f64
-    );*/
     Ok(())
 }

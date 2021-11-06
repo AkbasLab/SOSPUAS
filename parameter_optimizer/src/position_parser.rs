@@ -17,14 +17,6 @@ impl TimePoint {
     fn is_before(&self, other: &TimePoint) -> bool {
         self <= other
     }
-
-    fn is_after_strict(&self, other: &TimePoint) -> bool {
-        self > other
-    }
-
-    fn is_before_strict(&self, other: &TimePoint) -> bool {
-        self < other
-    }
 }
 
 /// Data that is recorded at a point in time during the simulation
@@ -133,10 +125,10 @@ impl SimulationData {
         let mut state = HashMap::new();
         if !frames.is_empty() {
             for uav in &unique_ids {
-                for i in 0..frames.len() {
+                for (i, _) in frames.iter().enumerate() {
                     let entry = &frames[i];
-                    if entry.inner.contains_key(&uav) {
-                        state.insert(uav.clone(), InterpolationState::Before(i));
+                    if entry.inner.contains_key(uav) {
+                        state.insert(*uav, InterpolationState::Before(i));
                         break;
                     }
                 }
