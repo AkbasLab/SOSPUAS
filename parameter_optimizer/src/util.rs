@@ -84,28 +84,22 @@ where
 {
     pub fn new(steps: usize, values: &[T]) -> Self {
         let mut data: Vec<T> = Vec::with_capacity(steps);
-        if steps <= values.len() {
-            for i in 0..steps {
-                let mut j = 0;
-                let src_index = i * values.len() / steps;
-                let src_index = loop {
-                    //Find a value of j that causes src_index to increase by one.
-                    //Then return the index before that, so we include all lower values
-                    let new_src_index = (i + j) * values.len() / steps;
-                    if new_src_index > src_index {
-                        break new_src_index - 1;
-                    }
-                    j += 1;
-                };
-                println!("src: {} - {}", src_index, i);
-                data.push(values[src_index]);
-            }
-        } else {
-            for i in 0..steps {
-                let src_index = i * values.len() / steps;
-                data.push(values[src_index]);
-            }
+        for i in 0..steps {
+            let mut j = 0;
+            let src_index = i * values.len() / steps;
+            let src_index = loop {
+                //Find a value of j that causes src_index to increase by one.
+                //Then return the index before that, so we include all lower values
+                let new_src_index = (i + j) * values.len() / steps;
+                if new_src_index > src_index {
+                    break new_src_index - 1;
+                }
+                j += 1;
+            };
+            println!("src: {} - {}", src_index, i);
+            data.push(values[src_index]);
         }
+
         Self { data }
     }
 

@@ -1,5 +1,4 @@
 use crate::position_parser::{SimulationData, TimePoint};
-use crate::util;
 
 use glam::Vec3A;
 use once_cell::sync::OnceCell;
@@ -11,6 +10,7 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 struct Parameter {
     name: String,
@@ -19,17 +19,28 @@ struct Parameter {
 
 type State = Arc<Mutex<StateImpl>>;
 
+struct SimulationRun {
+    /// The parameters used in this run
+    parameters: HashMap<String, f64>,
+    /// The fitness score of this run
+    fitness: f64,
+    /// The time this run finished
+    time: Instant,
+}
+
 struct StateImpl {
+    /// The parameters in use. The `name` value in the Parameter struct corresponds with the
+    /// key in a `SimulationRun`'s `parameters` map
     params: Vec<Parameter>,
 
-    //Mapping of parameter values to the fitness score
-    results: Vec<(HashMap<String, f64>, f64)>,
+    /// Finished runs
+    results: Vec<SimulationRun>,
 }
 
 static RUNNING: AtomicBool = AtomicBool::new(true);
 static PATH: OnceCell<String> = OnceCell::new();
 static STATE: OnceCell<State> = OnceCell::new();
-static BASE_ARGUMENTS: [&str; 1] = ["--duration=30"];
+static BASE_ARGUMENTS: [&str; 1] = ["--duration=180"];
 static BEST_FITNESS: atomic_float::AtomicF64 = atomic_float::AtomicF64::new(10000.0);
 
 pub fn run(path: &str) {
@@ -79,60 +90,19 @@ pub fn run(path: &str) {
     let state = STATE.get().unwrap().lock().unwrap();
     println!("Exporting results from {} simulations", state.results.len());
 
-    let width = 50;
-    let height = 40;
+    write_hot_cold(&state, "hot_cold.png").unwrap();
+    write_fitness_time(&state, "fitness_time.png").unwrap();
+}
 
-    //Map parameter values to integer coordinates so we can draw them as pixels
-    let params_to_draw: Vec<&String> = state.results[0].0.keys().take(2).collect();
-    let mut pixel_map = HashMap::new();
-    for result in &state.results {
-        let params_used = &result.0;
-        let x = params_used[params_to_draw[0]];
-        let y = params_used[params_to_draw[1]];
-        let px: usize = util::map(0.0, param_max, x, 0.0, width as f64) as usize;
-        let py: usize = util::map(0.0, param_max, y, 0.0, height as f64) as usize;
-        let fitness = result.1;
-
-        let key = (px, py);
-        pixel_map
-            .entry(key)
-            .or_insert_with(|| (Vec::new(), x, y))
-            .0
-            .push(fitness);
-    }
-
-    //Find min and max fitness scores for color interpolation
+fn write_hot_cold(state: &StateImpl, file_name: &str) -> Result<(), Box<dyn std::error::Error>> {
     let mut fitness_scores: Vec<f64> = state
         .results
         .iter()
-        .map(|(_, s)| *s)
+        .map(|r| r.fitness)
         .filter(|v| !v.is_nan())
         .collect();
 
     fitness_scores.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    let min = *fitness_scores.first().unwrap();
-    let max = *fitness_scores.last().unwrap();
-    println!("min {} max {}", min, max);
-
-    let out_file_name: &'static str = "hot_cold.png";
-    let root = BitMapBackend::new(out_file_name, (width, height)).into_drawing_area();
-
-    root.fill(&WHITE).unwrap();
-
-    let mut chart = ChartBuilder::on(&root)
-        .x_label_area_size(0)
-        .y_label_area_size(0)
-        .build_cartesian_2d(0.0..param_max, 0.0..param_max)
-        .unwrap();
-
-    chart
-        .configure_mesh()
-        .disable_x_mesh()
-        .disable_y_mesh()
-        .draw()
-        .unwrap();
-
-    let plotting_area = chart.plotting_area();
 
     //We want to color the points on the scatteragram based on the fitness for that point.
     //Finding the best fitness and assigning it green, and the worst fitness red, and then
@@ -143,31 +113,116 @@ pub fn run(path: &str) {
     //size being 1/256 * 100 % to make it very smooth
 
     let step_size = 256;
-    //let mut score_dist = Vec::with_capacity(256);
-    let mut scores_processed = 0;
-    for score in fitness_scores.iter() {
-        
-        scores_processed += 1;
-    }
+    let smoother = crate::util::RangeSmoother::new(step_size, fitness_scores.as_slice());
+    let smoothed_values: Vec<_> = smoother.ranges().collect();
 
-    for (_, data) in pixel_map {
-        let fitnesses = &data.0;
-        let x = data.1;
-        let y = data.2;
+    let params_to_draw: Vec<&String> = state.results[0].parameters.keys().take(2).collect();
+    let points: Vec<_> = state
+        .results
+        .iter()
+        .map(|result| {
+            let params_used = &result.parameters;
+            let x = params_used[params_to_draw[0]];
+            let y = params_used[params_to_draw[1]];
+            (x, y, result.fitness)
+        })
+        .collect();
 
-        let average_fitness = fitnesses.iter().sum::<f64>() / fitnesses.len() as f64;
-        let good = util::map(min, max, average_fitness, 1.0, 0.0);
-        let r = util::map(0.0, 1.0, good, 255.0, 0.0) as u8;
-        let g = util::map(0.0, 1.0, good, 0.0, 255.0) as u8;
-        let b = util::map(0.0, 1.0, good, 100.0, 200.0) as u8;
-        plotting_area
-            .draw_pixel((x, y), &RGBColor(r, g, b))
-            .unwrap();
-    }
+    let root = BitMapBackend::new(file_name, (1024, 768)).into_drawing_area();
 
-    // To avoid the IO failure being ignored silently, we manually call the present function
+    root.fill(&WHITE)?;
+    let x_param = params_to_draw[0];
+    let y_param = params_to_draw[1];
+    root.titled(
+        format!("{} vs. {}", x_param, y_param).as_str(),
+        ("sans-serif", 40),
+    )?;
+
+    let areas = root.split_by_breakpoints([944], [80]);
+
+    let mut scatter_ctx = ChartBuilder::on(&areas[2])
+        .x_label_area_size(40)
+        .y_label_area_size(40)
+        .build_cartesian_2d(0f64..2f64, 0f64..4f64)?;
+
+    scatter_ctx
+        .configure_mesh()
+        .disable_x_mesh()
+        .disable_y_mesh()
+        .x_desc(x_param)
+        .y_desc(y_param)
+        .draw()?;
+
+    scatter_ctx.draw_series(points.iter().map(|(x, y, fitness)| {
+        let mut i = 0;
+        for limit in smoothed_values.iter() {
+            i += 1;
+            if fitness < limit {
+                break;
+            }
+        }
+
+        let color = plotters::style::RGBColor(i as u8, (256 - i) as u8, 50);
+        Circle::new((*x, *y), 2, color.filled())
+    }))?;
+
     root.present().expect("Unable to write image to file");
-    println!("Result has been saved to {}", out_file_name);
+
+    Ok(())
+}
+
+fn write_fitness_time(
+    state: &StateImpl,
+    file_name: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let root = BitMapBackend::new(file_name, (1024, 768)).into_drawing_area();
+    root.fill(&WHITE)?;
+    if state.results.is_empty() {
+        println!("No data to graph");
+        return Ok(());
+    }
+    let worst_fitness = state
+        .results
+        .iter()
+        .map(|e| e.fitness)
+        .max_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap() as f32;
+    let start = state.results.first().unwrap().time;
+    let end = state.results.last().unwrap().time;
+
+    let mut chart = ChartBuilder::on(&root)
+        .x_label_area_size(40)
+        .y_label_area_size(40)
+        .caption("Fitness Score vs. Time", ("sans-serif", 50.0).into_font())
+        .build_cartesian_2d(0.0..(end - start).as_secs_f32(), 0f32..worst_fitness)?;
+
+    chart.configure_mesh().light_line_style(&WHITE).draw()?;
+
+    chart.draw_series(state.results.iter().map(|r| {
+        Circle::new(
+            ((r.time - start).as_secs_f32(), r.fitness as f32),
+            2,
+            &BLACK,
+        )
+    }))?;
+
+    chart
+        .draw_series(LineSeries::new(
+            state.results.chunks(num_cpus::get() * 3).map(|runs| {
+                let x = runs
+                    .iter()
+                    .map(|r| (r.time - start).as_secs_f32())
+                    .sum::<f32>()
+                    / runs.len() as f32;
+                let y = runs.iter().map(|r| r.fitness as f32).sum::<f32>() / runs.len() as f32;
+
+                (x, y)
+            }),
+            &BLUE,
+        ))?
+        .label("Average fitness");
+
+    Ok(())
 }
 
 fn run_binary(
@@ -294,7 +349,7 @@ fn get_fitness(data: &mut SimulationData) -> f64 {
         let mad_of_distance = rgsl::statistics::absdev(&distances, 1, distances.len());
         let mean_velocity = rgsl::statistics::mean(&velocities, 1, velocities.len());
         let mad_percent = mad_of_distance * distances_mean * 100.0;
-        let mad_threshold = 30.0;
+        let mad_threshold = 180.0;
         match under_mad_threshold_time {
             Some(_) => {
                 if mad_percent >= mad_threshold {
@@ -349,7 +404,11 @@ fn run_analysis(
             let value = param_map.get(&param.name).unwrap();
             param.optim.tell(*value, fitness).unwrap();
         }
-        state.results.push((param_map.clone(), fitness));
+        state.results.push(SimulationRun {
+            parameters: param_map.clone(),
+            time: Instant::now(),
+            fitness,
+        });
     }
     let old_fitness = BEST_FITNESS.load(Ordering::Relaxed);
     if fitness < old_fitness {
