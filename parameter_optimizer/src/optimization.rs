@@ -143,7 +143,7 @@ fn write_hot_cold(state: &StateImpl, file_name: &str) -> Result<(), Box<dyn std:
     let mut scatter_ctx = ChartBuilder::on(&areas[2])
         .x_label_area_size(40)
         .y_label_area_size(40)
-        .build_cartesian_2d(0f64..2f64, 0f64..4f64)?;
+        .build_cartesian_2d(0f64..1.2f64, 0f64..2.5f64)?;
 
     scatter_ctx
         .configure_mesh()
@@ -186,7 +186,8 @@ fn write_fitness_time(
         .iter()
         .map(|e| e.fitness)
         .max_by(|a, b| a.partial_cmp(b).unwrap())
-        .unwrap() as f32;
+        .unwrap() as f32 * 0.7;//Scale down to hide outliers
+
     let start = state.results.first().unwrap().time;
     let end = state.results.last().unwrap().time;
 
@@ -208,7 +209,7 @@ fn write_fitness_time(
 
     chart
         .draw_series(LineSeries::new(
-            state.results.chunks(num_cpus::get() * 3).map(|runs| {
+            state.results.chunks(num_cpus::get() * 3 / 2).map(|runs| {
                 let x = runs
                     .iter()
                     .map(|r| (r.time - start).as_secs_f32())
