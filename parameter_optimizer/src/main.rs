@@ -13,7 +13,7 @@ fn main() {
     let needs_configure = match git::setup_repo(&git::RepoInfo {
         url: url.to_owned(),
         path: path.to_owned(),
-        commit_hash: "fd23b226569d82ac6a55ffec5c6899a647a2b309".to_owned(),
+        commit_hash: "ba8ea4ac58eada9679146ba2dc755789bbfbe91e".to_owned(),
     }) {
         Ok(needs_configure) => needs_configure,
         Err(err) => {

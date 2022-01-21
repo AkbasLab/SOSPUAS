@@ -153,7 +153,7 @@ main (int argc, char *argv[])
 
   NS_LOG_INFO ("Create channels.");
 
-  std::string phyMode ("DsssRate1Mbps");
+  std::string phyMode ("DsssRate11Mbps");
   double rss = -80; // -dBm
   bool verbose = false;
 

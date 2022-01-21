@@ -96,7 +96,6 @@ where
                 }
                 j += 1;
             };
-            println!("src: {} - {}", src_index, i);
             data.push(values[src_index]);
         }
 
