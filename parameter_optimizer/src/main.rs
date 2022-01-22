@@ -10,6 +10,7 @@ type Error = Box<dyn std::error::Error>;
 fn main() {
     let url = "https://github.com/TroyNeubauer/NS3NonIdealConditions2021.git";
     let path = "NS3".to_owned();
+    /*
     let needs_configure = match git::setup_repo(&git::RepoInfo {
         url: url.to_owned(),
         path: path.to_owned(),
@@ -30,6 +31,7 @@ fn main() {
         )
         .unwrap();
     }
+    */
 
     util::run_waf_command(&path, "build", HashMap::new()).expect("failed to build waf");
 

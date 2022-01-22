@@ -366,10 +366,12 @@ fn get_fitness(data: &mut SimulationData) -> f64 {
                 last_poses.insert(uav, (now_pos, time));
                 if uav != central_node {
                     central_distances.push((now_pos - central_pos).length() as f64);
+                    println!("Looping {uav}");
                     for uav_2 in &uavs {
                         if uav != uav_2 && uav_2 != central_node {
                             //Calculate the distance between this node and every other peripheral node
                             if let Some(now_2_pos) = data.pos_at_time(TimePoint(time), *uav) {
+                                println!("  other {uav_2} at {now_2_pos}");
                                 peripheral_distances.push((now_2_pos - now_pos).length() as f64);
                             }
                         }
