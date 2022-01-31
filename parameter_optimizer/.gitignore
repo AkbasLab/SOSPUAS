@@ -18,3 +18,8 @@ Cargo.lock
 
 NS3/
 output*.json
+fitness_time.png
+hot_cold.png
+output-*.json
+re_exported/
+

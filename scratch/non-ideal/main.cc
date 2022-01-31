@@ -224,28 +224,13 @@ main (int argc, char *argv[])
       ApplicationContainer apps = client.Install (node);
       apps.Get (0)->SetAttribute ("ClientAddress",
                                   Ipv4AddressValue (assignedAddresses.GetAddress (i)));
+      apps.Get (0)->SetAttribute ("LocalAddress",
+                                  Ipv4AddressValue (assignedAddresses.GetAddress (i)));
       apps.Start (Seconds (1.0));
     }
 
   MobilityHelper mobility;
-#if 0
-  Ptr<RandomBoxPositionAllocator> alloc = CreateObject<RandomBoxPositionAllocator> ();
 
-  Ptr<UniformRandomVariable> xz = CreateObject<UniformRandomVariable> ();
-  double range = 5;
-  xz->SetAttribute ("Min", DoubleValue (-range));
-  xz->SetAttribute ("Max", DoubleValue (range));
-
-  Ptr<UniformRandomVariable> y = CreateObject<UniformRandomVariable> ();
-  y->SetAttribute ("Min", DoubleValue (-range));
-  y->SetAttribute ("Max", DoubleValue (range));
-
-  alloc->SetX (xz);
-  alloc->SetY (y);
-  alloc->SetZ (xz);
-  mobility.SetPositionAllocator (alloc);
-
-#elif 1
   Ptr<ListPositionAllocator> alloc = CreateObject<ListPositionAllocator> ();
   //For central node
   alloc->Add (Vector (0, 0, 0));
@@ -266,13 +251,6 @@ main (int argc, char *argv[])
 
   mobility.SetPositionAllocator (alloc);
 
-#else
-  mobility.SetPositionAllocator ("ns3::RandomBoxPositionAllocator", "MinX", DoubleValue (0.0),
-                                 "MinY", DoubleValue (0.0), "DeltaX", DoubleValue (100.0), "DeltaY",
-                                 DoubleValue (1.0), "GridWidth", UintegerValue (10), "LayoutType",
-                                 StringValue ("RowFirst"));
-
-#endif
   mobility.SetMobilityModel ("ns3::WaypointMobilityModel", "InitialPositionIsWaypoint",
                              BooleanValue (true));
 

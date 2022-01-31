@@ -7,22 +7,28 @@ use rand::{distributions::Alphanumeric, Rng};
 
 use std::collections::HashMap;
 use std::ops::Deref;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, serde::Deserialize)]
 struct Parameter {
     name: String,
-    #[serde(skip)]
+    #[serde(skip, default = "optim_new")]
     optim: tpe::TpeOptimizer,
+}
+
+const PARAM_MAX: f64 = 10.0;
+
+fn optim_new() -> tpe::TpeOptimizer {
+    tpe::TpeOptimizer::new(tpe::parzen_estimator(), tpe::range(0.0, PARAM_MAX).unwrap())
 }
 
 type State = Arc<Mutex<StateImpl>>;
 
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, serde::Deserialize)]
 struct SimulationRun {
     /// The parameters used in this run
     parameters: HashMap<String, f64>,
@@ -32,7 +38,7 @@ struct SimulationRun {
     time: SystemTime,
 }
 
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, serde::Deserialize)]
 struct StateImpl {
     /// The parameters in use. The `name` value in the Parameter struct corresponds with the
     /// key in a `SimulationRun`'s `parameters` map
@@ -45,7 +51,18 @@ struct StateImpl {
 static RUNNING: AtomicBool = AtomicBool::new(true);
 static PATH: OnceCell<String> = OnceCell::new();
 static STATE: OnceCell<State> = OnceCell::new();
-static BASE_ARGUMENTS: [&str; 1] = ["--duration=180"];
+
+static BASE_ARGUMENTS: [&str; 5] = [
+    "--duration=180",
+    "--pNodes=8",
+    "--packetInterval=1.5",
+    "--calculateInterval=0.01",
+    "--spawnRadius=16",
+];
+const TARGET_DISTANCE: f64 = 15.0;
+
+const MAX_SIMULATIONS: usize = 1000;
+
 static BEST_FITNESS: atomic_float::AtomicF64 = atomic_float::AtomicF64::new(10000.0);
 
 pub fn run(path: &str) {
@@ -61,21 +78,20 @@ pub fn run(path: &str) {
     })
     .expect("failed to to set Control-C handler");
 
-    let param_max = 10.0;
     let _ = STATE.set(Arc::new(Mutex::new(StateImpl {
         params: vec![
             Parameter {
                 name: "a".to_owned(),
                 optim: tpe::TpeOptimizer::new(
                     tpe::parzen_estimator(),
-                    tpe::range(0.0, param_max).unwrap(),
+                    tpe::range(0.0, PARAM_MAX).unwrap(),
                 ),
             },
             Parameter {
                 name: "r".to_owned(),
                 optim: tpe::TpeOptimizer::new(
                     tpe::parzen_estimator(),
-                    tpe::range(0.0, param_max).unwrap(),
+                    tpe::range(0.0, PARAM_MAX).unwrap(),
                 ),
             },
         ],
@@ -89,8 +105,8 @@ pub fn run(path: &str) {
 
     let mut threads = Vec::new();
     let _ = PATH.set(path.to_owned());
-    //for _ in 0..num_cpus::get() {
-    for _ in 0..1 {
+    for _ in 0..num_cpus::get() {
+        //for _ in 0..1 {
         threads.push(std::thread::spawn(run_thread));
     }
     println!("Runners started");
@@ -112,7 +128,27 @@ pub fn run(path: &str) {
     println!("Wrote data backup file");
 
     write_hot_cold(&state, "hot_cold.png").unwrap();
-    write_fitness_time(&state, "fitness_time.png").unwrap();
+    write_error_time(&state, "fitness_time.png").unwrap();
+}
+
+pub fn re_export(json_path: impl AsRef<Path>, prefix: Option<&str>) -> Result<(), crate::Error> {
+    let json = std::fs::read_to_string(json_path)?;
+    let state: StateImpl = serde_json::from_str(&json)?;
+    if state.results.len() < 1000 {
+        println!(
+            "WARN: only {} runs counted. Dataset might be too small",
+            state.results.len()
+        );
+    }
+
+    let hot_cold_path = format!("{}hot_cold.png", prefix.unwrap_or(""));
+    write_hot_cold(&state, &hot_cold_path)?;
+
+    let error_time_path = format!("{}error_time.png", prefix.unwrap_or(""));
+    write_error_time(&state, &error_time_path)?;
+
+    println!("Exported {} runs successfully", state.results.len());
+    Ok(())
 }
 
 fn write_hot_cold(state: &StateImpl, file_name: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -154,10 +190,12 @@ fn write_hot_cold(state: &StateImpl, file_name: &str) -> Result<(), Box<dyn std:
     root.fill(&WHITE)?;
     let x_param = params_to_draw[0];
     let y_param = params_to_draw[1];
-    root.titled(
-        format!("{} vs. {}", x_param, y_param).as_str(),
-        ("sans-serif", 40),
-    )?;
+
+    // Disable title
+    // root.titled(
+    //     format!("{} vs. {}", x_param, y_param).as_str(),
+    //     ("sans-serif", 40),
+    // )?;
 
     let areas = root.split_by_breakpoints([944], [80]);
 
@@ -172,6 +210,8 @@ fn write_hot_cold(state: &StateImpl, file_name: &str) -> Result<(), Box<dyn std:
         .disable_y_mesh()
         .x_desc(x_param)
         .y_desc(y_param)
+        .label_style(("sans-serif", 25))
+        .axis_desc_style(("sans-serif", 25))
         .draw()?;
 
     scatter_ctx.draw_series(points.iter().map(|(x, y, fitness)| {
@@ -192,10 +232,7 @@ fn write_hot_cold(state: &StateImpl, file_name: &str) -> Result<(), Box<dyn std:
     Ok(())
 }
 
-fn write_fitness_time(
-    state: &StateImpl,
-    file_name: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+fn write_error_time(state: &StateImpl, file_name: &str) -> Result<(), Box<dyn std::error::Error>> {
     let root = BitMapBackend::new(file_name, (1024, 768)).into_drawing_area();
     root.fill(&WHITE)?;
     if state.results.is_empty() {
@@ -218,10 +255,16 @@ fn write_fitness_time(
     let mut chart = ChartBuilder::on(&root)
         .x_label_area_size(40u32)
         .y_label_area_size(40u32)
-        .caption("Fitness Score vs. Time", ("sans-serif", 50.0).into_font())
         .build_cartesian_2d(0.0..(seconds_since_start(&end) as f32), 0f32..worst_fitness)?;
 
-    chart.configure_mesh().light_line_style(&WHITE).draw()?;
+    chart
+        .configure_mesh()
+        .x_desc("Time (s)")
+        .y_desc("error")
+        .label_style(("sans-serif", 25))
+        .axis_desc_style(("sans-serif", 25))
+        .light_line_style(&WHITE)
+        .draw()?;
 
     chart.draw_series(state.results.iter().map(|r| {
         let a = (seconds_since_start(&r.time) as f32, r.fitness as f32);
@@ -308,6 +351,9 @@ fn run_thread() {
             &positions_file.to_str().unwrap()
         ));
 
+        let seed: usize = rng.gen();
+        args.push(format!("--seed={}", seed));
+
         {
             let mut state = STATE.get().unwrap().lock().unwrap();
             param_map.clear();
@@ -345,7 +391,6 @@ fn get_fitness(data: &mut SimulationData) -> f64 {
     let mut all_central_distances = Vec::new();
     let mut all_peripheral_distances = Vec::new();
     let mut all_velocities = Vec::new();
-    let mut under_mad_threshold_time = None;
     while time <= data.simulation_length {
         let mut central_distances: Vec<f64> = Vec::new();
         let mut peripheral_distances: Vec<f64> = Vec::new();
@@ -366,12 +411,10 @@ fn get_fitness(data: &mut SimulationData) -> f64 {
                 last_poses.insert(uav, (now_pos, time));
                 if uav != central_node {
                     central_distances.push((now_pos - central_pos).length() as f64);
-                    println!("Looping {uav}");
                     for uav_2 in &uavs {
                         if uav != uav_2 && uav_2 != central_node {
                             //Calculate the distance between this node and every other peripheral node
-                            if let Some(now_2_pos) = data.pos_at_time(TimePoint(time), *uav) {
-                                println!("  other {uav_2} at {now_2_pos}");
+                            if let Some(now_2_pos) = data.pos_at_time(TimePoint(time), *uav_2) {
                                 peripheral_distances.push((now_2_pos - now_pos).length() as f64);
                             }
                         }
@@ -384,52 +427,31 @@ fn get_fitness(data: &mut SimulationData) -> f64 {
             rgsl::statistics::mean(&central_distances, 1, central_distances.len());
         let peripheral_distances_mean =
             rgsl::statistics::mean(&peripheral_distances, 1, peripheral_distances.len());
-        let mad_of_central_distance: f64 =
-            rgsl::statistics::absdev(&central_distances, 1, central_distances.len());
+
         let mean_velocity = rgsl::statistics::mean(&velocities, 1, velocities.len());
 
-        let mad_percent = mad_of_central_distance * central_distances_mean * 100.0;
-        let mad_threshold = 180.0;
-        match under_mad_threshold_time {
-            Some(_) => {
-                if mad_percent >= mad_threshold {
-                    //Too high to hold streak
-                    under_mad_threshold_time = None;
-                }
-            }
-            None => {
-                if mad_percent < mad_threshold {
-                    //Start streak
-                    under_mad_threshold_time = Some(time);
-                }
-            }
-        }
-        all_central_distances.push((time, central_distances_mean));
-        all_velocities.push((time, mean_velocity));
-        all_peripheral_distances.push((time, peripheral_distances_mean));
+        all_central_distances.push(central_distances_mean);
+        all_velocities.push(mean_velocity);
+        all_peripheral_distances.push(peripheral_distances_mean);
         //println!("T: {}, V: {}, D: {}", time, mean_velocity, mad_of_distance);
 
         time += time_step;
     }
-    let stable_time = under_mad_threshold_time.unwrap_or(180.0) as f64;
-    let mean_velocity: f64 =
-        all_velocities.iter().map(|(_, v)| *v).sum::<f64>() / all_velocities.len() as f64;
+    let mean_velocity: f64 = all_velocities.iter().sum::<f64>() / all_velocities.len() as f64;
 
-    let peripheral_mean: f64 = all_peripheral_distances
-        .iter()
-        .map(|(_, v)| *v)
-        .sum::<f64>()
-        / all_peripheral_distances.len() as f64;
-    dbg!(peripheral_mean, all_peripheral_distances);
+    let mean_central_distance: f64 =
+        rgsl::statistics::mean(&all_central_distances, 1, all_central_distances.len());
 
-    let average_distance = all_central_distances.iter().map(|(_, v)| *v).sum::<f64>()
-        / all_central_distances.len() as f64;
+    let mad_of_peripheral_distance: f64 =
+        rgsl::statistics::absdev(&all_peripheral_distances, 1, all_peripheral_distances.len());
 
-    let desired_distance_cost = 200.0 * (3.0 - average_distance).abs();
-    let stable_time_cost = 1.0 * stable_time;
+    println!("mean central: {mean_central_distance}, c mad: {mad_of_peripheral_distance}");
+
+    let p_mad_cost = 400.0 * mad_of_peripheral_distance;
+    let central_distance_cost = 400.0 * (TARGET_DISTANCE - mean_central_distance).abs();
     let velocity_cost = 250.0 * mean_velocity;
 
-    desired_distance_cost + stable_time_cost + velocity_cost
+    p_mad_cost + central_distance_cost + velocity_cost
 }
 
 fn run_analysis(
@@ -452,6 +474,13 @@ fn run_analysis(
             time: SystemTime::now(),
             fitness,
         });
+        let simulations = state.results.len();
+        if simulations == MAX_SIMULATIONS {
+            println!("Exiting after {}", MAX_SIMULATIONS);
+            RUNNING.store(false, Ordering::Relaxed);
+        } else {
+            println!("  {}", simulations);
+        }
     }
     let old_fitness = BEST_FITNESS.load(Ordering::Relaxed);
     if fitness < old_fitness {
@@ -461,9 +490,13 @@ fn run_analysis(
         let mut dest = PathBuf::from(positions_file);
         dest.pop(); //Pop positions csv file name
         dest.push("out");
+        let _ = std::fs::create_dir_all(&dest);
         dest.push(format!("{}.csv", fitness));
         std::fs::copy(src, dest).unwrap();
-        println!("Got best fitness: {} for params: {:?}", fitness, param_map);
+        println!(
+            "  got best fitness: {} for params: {:?}",
+            fitness, param_map
+        );
     }
 
     if let Some(err) = std::fs::remove_file(pos_path).err() {
