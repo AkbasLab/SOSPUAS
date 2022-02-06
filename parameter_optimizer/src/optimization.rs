@@ -5,8 +5,8 @@ use once_cell::sync::OnceCell;
 use plotters::prelude::*;
 use rand::{distributions::Alphanumeric, Rng};
 
-use std::collections::HashMap;
-use std::ops::Deref;
+use indexmap::IndexMap;
+use std::ops::{Deref, Range};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -20,10 +20,14 @@ struct Parameter {
     optim: tpe::TpeOptimizer,
 }
 
-const PARAM_MAX: f64 = 10.0;
+const PARAM_MAX: f64 = 18.0;
+const PARAM_MIN: f64 = 0.0;
 
 fn optim_new() -> tpe::TpeOptimizer {
-    tpe::TpeOptimizer::new(tpe::parzen_estimator(), tpe::range(0.0, PARAM_MAX).unwrap())
+    tpe::TpeOptimizer::new(
+        tpe::parzen_estimator(),
+        tpe::range(PARAM_MIN, PARAM_MAX).unwrap(),
+    )
 }
 
 type State = Arc<Mutex<StateImpl>>;
@@ -31,9 +35,10 @@ type State = Arc<Mutex<StateImpl>>;
 #[derive(serde::Serialize, serde::Deserialize)]
 struct SimulationRun {
     /// The parameters used in this run
-    parameters: HashMap<String, f64>,
-    /// The fitness score of this run
-    fitness: f64,
+    parameters: IndexMap<String, f64>,
+    /// The error score for this run
+    #[serde(rename = "fitness")]
+    error: f64,
     /// The time this run finished
     time: SystemTime,
 }
@@ -63,7 +68,7 @@ const TARGET_DISTANCE: f64 = 15.0;
 
 const MAX_SIMULATIONS: usize = 1000;
 
-static BEST_FITNESS: atomic_float::AtomicF64 = atomic_float::AtomicF64::new(10000.0);
+static LOWEST_ERROR: atomic_float::AtomicF64 = atomic_float::AtomicF64::new(10000.0);
 
 pub fn run(path: &str) {
     ctrlc::set_handler(|| {
@@ -84,23 +89,23 @@ pub fn run(path: &str) {
                 name: "a".to_owned(),
                 optim: tpe::TpeOptimizer::new(
                     tpe::parzen_estimator(),
-                    tpe::range(0.0, PARAM_MAX).unwrap(),
+                    tpe::range(PARAM_MIN, PARAM_MAX).unwrap(),
                 ),
             },
             Parameter {
                 name: "r".to_owned(),
                 optim: tpe::TpeOptimizer::new(
                     tpe::parzen_estimator(),
-                    tpe::range(0.0, PARAM_MAX).unwrap(),
+                    tpe::range(PARAM_MIN, PARAM_MAX).unwrap(),
                 ),
             },
         ],
         results: Vec::new(),
     })));
-    let default_fitness = BEST_FITNESS.load(Ordering::Relaxed);
+    let default_error = LOWEST_ERROR.load(Ordering::Relaxed);
     for param in STATE.get().unwrap().lock().unwrap().params.iter_mut() {
         // Fill in default values so parameters start around 1 by default
-        param.optim.tell(1.0, default_fitness).unwrap();
+        param.optim.tell(1.0, default_error).unwrap();
     }
 
     let mut threads = Vec::new();
@@ -128,7 +133,7 @@ pub fn run(path: &str) {
     println!("Wrote data backup file");
 
     write_hot_cold(&state, "hot_cold.png").unwrap();
-    write_error_time(&state, "fitness_time.png").unwrap();
+    write_error_time(&state, "error_time.png").unwrap();
 }
 
 pub fn re_export(json_path: impl AsRef<Path>, prefix: Option<&str>) -> Result<(), crate::Error> {
@@ -151,15 +156,110 @@ pub fn re_export(json_path: impl AsRef<Path>, prefix: Option<&str>) -> Result<()
     Ok(())
 }
 
+pub fn re_export_all(dir_path: impl AsRef<Path>) -> Result<(), crate::Error> {
+    let path = dir_path.as_ref();
+    println!("Checking {:?} for json files", path.to_str());
+    for entry in walkdir::WalkDir::new(dir_path)
+        .contents_first(true)
+        .into_iter()
+        .filter_entry(|e| {
+            e.file_type().is_dir()
+                || e.file_name()
+                    .to_str()
+                    .map(|s| s.ends_with(".json"))
+                    .unwrap_or(false)
+        })
+        .flatten()
+    {
+        if entry.file_type().is_file() {
+            let parent = entry.path().parent().expect("json file has no parent!");
+            if let Err(err) = re_export(entry.path(), parent.to_str()) {
+                println!(
+                    "Failed to export {}: {:?}",
+                    entry.path().to_str().unwrap(),
+                    err
+                );
+            } else {
+                println!("Exported {} successfully", entry.path().to_str().unwrap(),);
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Returns the axis ranges for a set of points of which points within `range_include` standard
+/// deviations of the mean are within the range
+fn get_bounds_and_regression(
+    points: &[(f64, f64, f64)], //(x, y, error)
+    range_include: f64,
+) -> (Range<f64>, Range<f64>, f64, f64) {
+    //Clone points so we can work with a sorted version
+    let mut points: Vec<_> = points.iter().collect();
+    points.sort_by(|(_, _, error1), (_, _, error2)| error1.partial_cmp(error2).unwrap());
+    //We need this to be sorted so we can do regression on only the best ones
+
+    let x_coords: Vec<f64> = points.iter().map(|(x, _, _)| *x).collect();
+    let y_coords: Vec<f64> = points.iter().map(|(_, y, _)| *y).collect();
+    let weight: Vec<f64> = points
+        .iter()
+        // Weight is inversely positional to weight
+        // low error -> high weight, high error -> low weight
+        .map(|(_, _, error)| *error)
+        .collect();
+
+    // gsl requires this when we do `wlinear`
+    assert!(x_coords.len() == weight.len());
+    assert!(weight.len() == y_coords.len());
+
+    let x_mean = rgsl::statistics::mean(&x_coords, 1, x_coords.len());
+    let y_mean = rgsl::statistics::mean(&y_coords, 1, y_coords.len());
+    let x_stddev = rgsl::statistics::sd(&x_coords, 1, x_coords.len());
+    let y_stddev = rgsl::statistics::sd(&y_coords, 1, y_coords.len());
+
+    // Only run regression on the 20% of the points with the lowest error
+    // the lists are sorted so the best values are at the beginning
+    const REGRESSION_INCLUDE_TOP_PERCENT: f64 = 0.1;
+    let best_count = (x_coords.len() as f64 * REGRESSION_INCLUDE_TOP_PERCENT) as usize;
+    for ((x, y), error) in x_coords
+        .iter()
+        .zip(y_coords.iter())
+        .zip(weight.iter())
+        .take(best_count)
+    {
+        println!("[{}, {}] = {}", x, y, error);
+    }
+    let (aa, b, m, bb, cc, dd, r_squared) =
+        rgsl::fit::wlinear(&x_coords, 1, &weight, 1, &y_coords, 1, best_count);
+    println!("Got y={}x + {}, r^2={}", m, b, r_squared);
+    dbg!(aa, b, m, bb, cc, dd, r_squared);
+    let x_min = (x_mean - x_stddev * range_include).max(PARAM_MIN);
+    let x_max = (x_mean + x_stddev * range_include).min(PARAM_MAX);
+
+    let y_min = (y_mean - y_stddev * range_include).max(PARAM_MIN);
+    let y_max = (y_mean + y_stddev * range_include).min(PARAM_MAX);
+    println!(
+        "Bounds are x= {}..{}, y= {}..{}",
+        x_min, x_max, y_min, y_max
+    );
+
+    (
+        //clamp to the ranges that we simulated and apply `range_include`
+        x_min..x_max,
+        y_min..y_max,
+        m,
+        b,
+    )
+}
+
 fn write_hot_cold(state: &StateImpl, file_name: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let mut fitness_scores: Vec<f64> = state
+    let mut error_scores: Vec<f64> = state
         .results
         .iter()
-        .map(|r| r.fitness)
+        .map(|r| r.error)
         .filter(|v| !v.is_nan())
         .collect();
 
-    fitness_scores.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    error_scores.sort_by(|a, b| a.partial_cmp(b).unwrap());
 
     //We want to color the points on the scatteragram based on the fitness for that point.
     //Finding the best fitness and assigning it green, and the worst fitness red, and then
@@ -170,7 +270,7 @@ fn write_hot_cold(state: &StateImpl, file_name: &str) -> Result<(), Box<dyn std:
     //size being 1/256 * 100 % to make it very smooth
 
     let step_size = 256;
-    let smoother = crate::util::RangeSmoother::new(step_size, fitness_scores.as_slice());
+    let smoother = crate::util::RangeSmoother::new(step_size, error_scores.as_slice());
     let smoothed_values: Vec<_> = smoother.ranges().collect();
 
     let params_to_draw: Vec<&String> = state.results[0].parameters.keys().take(2).collect();
@@ -181,7 +281,7 @@ fn write_hot_cold(state: &StateImpl, file_name: &str) -> Result<(), Box<dyn std:
             let params_used = &result.parameters;
             let x = params_used[params_to_draw[0]];
             let y = params_used[params_to_draw[1]];
-            (x, y, result.fitness)
+            (x, y, result.error)
         })
         .collect();
 
@@ -196,13 +296,23 @@ fn write_hot_cold(state: &StateImpl, file_name: &str) -> Result<(), Box<dyn std:
     //     format!("{} vs. {}", x_param, y_param).as_str(),
     //     ("sans-serif", 40),
     // )?;
+    //
 
+    const INCLUDE_POINTS_STDDEVS: f64 = 2.0;
     let areas = root.split_by_breakpoints([944], [80]);
+    let (x_bounds, y_bounds, linear_m, linear_b) =
+        get_bounds_and_regression(&points, INCLUDE_POINTS_STDDEVS);
+
+    let regression_func = |x: f64| -> f64 {
+        let y = linear_m * x + linear_b;
+        println!("f({}) = {}", x, y);
+        y
+    };
 
     let mut scatter_ctx = ChartBuilder::on(&areas[2])
-        .x_label_area_size(40)
-        .y_label_area_size(40)
-        .build_cartesian_2d(0f64..2.0f64, 0f64..2.5f64)?;
+        .x_label_area_size(60)
+        .y_label_area_size(80)
+        .build_cartesian_2d(x_bounds, y_bounds)?;
 
     scatter_ctx
         .configure_mesh()
@@ -210,15 +320,15 @@ fn write_hot_cold(state: &StateImpl, file_name: &str) -> Result<(), Box<dyn std:
         .disable_y_mesh()
         .x_desc(x_param)
         .y_desc(y_param)
-        .label_style(("sans-serif", 25))
-        .axis_desc_style(("sans-serif", 25))
+        .label_style(("sans-serif", 30))
+        .axis_desc_style(("sans-serif", 30))
         .draw()?;
 
-    scatter_ctx.draw_series(points.iter().map(|(x, y, fitness)| {
+    scatter_ctx.draw_series(points.iter().map(|(x, y, error)| {
         let mut i = 0;
         for limit in smoothed_values.iter() {
             i += 1;
-            if fitness < limit {
+            if error < limit {
                 break;
             }
         }
@@ -226,6 +336,13 @@ fn write_hot_cold(state: &StateImpl, file_name: &str) -> Result<(), Box<dyn std:
         let color = plotters::style::RGBColor(i as u8, (256 - i) as u8, 50);
         Circle::new((*x, *y), 2, color.filled())
     }))?;
+
+    scatter_ctx
+        .draw_series(LineSeries::new(
+            vec![(0.0, regression_func(0.0)), (50.0, regression_func(50.0))].into_iter(),
+            &BLUE,
+        ))?
+        .label("Average error");
 
     root.present().expect("Unable to write image to file");
 
@@ -239,10 +356,10 @@ fn write_error_time(state: &StateImpl, file_name: &str) -> Result<(), Box<dyn st
         println!("No data to graph");
         return Ok(());
     }
-    let worst_fitness = state
+    let worst_error = state
         .results
         .iter()
-        .map(|e| e.fitness)
+        .map(|e| e.error)
         .max_by(|a, b| a.partial_cmp(b).unwrap())
         .unwrap() as f32
         * 0.7; //Scale down to hide outliers
@@ -253,12 +370,14 @@ fn write_error_time(state: &StateImpl, file_name: &str) -> Result<(), Box<dyn st
     let seconds_since_start = |time: &SystemTime| time.duration_since(start).unwrap().as_secs_f64();
 
     let mut chart = ChartBuilder::on(&root)
-        .x_label_area_size(40u32)
-        .y_label_area_size(40u32)
-        .build_cartesian_2d(0.0..(seconds_since_start(&end) as f32), 0f32..worst_fitness)?;
+        .x_label_area_size(65u32)
+        .y_label_area_size(110u32)
+        .build_cartesian_2d(0.0..(seconds_since_start(&end) as f32), 0f32..worst_error)?;
 
     chart
         .configure_mesh()
+        .disable_x_mesh()
+        .disable_y_mesh()
         .x_desc("Time (s)")
         .y_desc("error")
         .label_style(("sans-serif", 25))
@@ -267,7 +386,7 @@ fn write_error_time(state: &StateImpl, file_name: &str) -> Result<(), Box<dyn st
         .draw()?;
 
     chart.draw_series(state.results.iter().map(|r| {
-        let a = (seconds_since_start(&r.time) as f32, r.fitness as f32);
+        let a = (seconds_since_start(&r.time) as f32, r.error as f32);
         Circle::new(a, 2u32, &BLACK)
     }))?;
 
@@ -279,13 +398,13 @@ fn write_error_time(state: &StateImpl, file_name: &str) -> Result<(), Box<dyn st
                     .map(|r| seconds_since_start(&r.time) as f32)
                     .sum::<f32>()
                     / runs.len() as f32;
-                let y = runs.iter().map(|r| r.fitness as f32).sum::<f32>() / runs.len() as f32;
+                let y = runs.iter().map(|r| r.error as f32).sum::<f32>() / runs.len() as f32;
 
                 (x, y)
             }),
             &BLUE,
         ))?
-        .label("Average fitness");
+        .label("Average error");
 
     Ok(())
 }
@@ -324,7 +443,7 @@ fn run_binary(
 
 fn run_thread() {
     let mut rng = rand::thread_rng();
-    let mut param_map = HashMap::new();
+    let mut param_map = IndexMap::new();
     let mut args: Vec<String> = Vec::new();
     for arg in BASE_ARGUMENTS.iter() {
         args.push((*arg).to_owned());
@@ -381,10 +500,10 @@ fn run_thread() {
     println!("Runner exiting cleanly");
 }
 
-fn get_fitness(data: &mut SimulationData) -> f64 {
+fn get_error(data: &mut SimulationData) -> f64 {
     let time_step = 0.1;
     let mut time = 0.0;
-    let mut last_poses = HashMap::new();
+    let mut last_poses = IndexMap::new();
     let uavs = data.uavs.clone();
     let central_node = uavs.iter().min().unwrap();
 
@@ -456,23 +575,23 @@ fn get_fitness(data: &mut SimulationData) -> f64 {
 
 fn run_analysis(
     pos_path: &std::path::Path,
-    param_map: &HashMap<String, f64>,
+    param_map: &IndexMap<String, f64>,
     positions_file: &std::path::Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
     //let start = Instant::now();
     let positions = String::from_utf8(std::fs::read(&pos_path)?)?;
     let mut data = SimulationData::parse(&positions)?;
-    let fitness = get_fitness(&mut data);
+    let error = get_error(&mut data);
     {
         let mut state = STATE.get().unwrap().lock().unwrap();
         for param in state.params.iter_mut() {
             let value = param_map.get(&param.name).unwrap();
-            param.optim.tell(*value, fitness).unwrap();
+            param.optim.tell(*value, error).unwrap();
         }
         state.results.push(SimulationRun {
             parameters: param_map.clone(),
             time: SystemTime::now(),
-            fitness,
+            error,
         });
         let simulations = state.results.len();
         if simulations == MAX_SIMULATIONS {
@@ -482,21 +601,18 @@ fn run_analysis(
             println!("  {}", simulations);
         }
     }
-    let old_fitness = BEST_FITNESS.load(Ordering::Relaxed);
-    if fitness < old_fitness {
+    let old_error = LOWEST_ERROR.load(Ordering::Relaxed);
+    if error < old_error {
         //If multiple threads get in here we don't really care...
-        BEST_FITNESS.store(fitness, Ordering::Relaxed);
+        LOWEST_ERROR.store(error, Ordering::Relaxed);
         let src = positions_file;
         let mut dest = PathBuf::from(positions_file);
         dest.pop(); //Pop positions csv file name
         dest.push("out");
         let _ = std::fs::create_dir_all(&dest);
-        dest.push(format!("{}.csv", fitness));
+        dest.push(format!("{}.csv", error));
         std::fs::copy(src, dest).unwrap();
-        println!(
-            "  got best fitness: {} for params: {:?}",
-            fitness, param_map
-        );
+        println!("  got best error: {} for params: {:?}", error, param_map);
     }
 
     if let Some(err) = std::fs::remove_file(pos_path).err() {

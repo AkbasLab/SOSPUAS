@@ -14,9 +14,15 @@ struct Args {
     /// Name of the person to greet
     #[clap(
         long,
-        help = "Re-exports the graphs associated with the json run data in FILE"
+        help = "Re-exports the graphs associated with the json run data in RE-EXPORT"
     )]
     re_export: Option<String>,
+
+    #[clap(
+        long,
+        help = "Re-exports the graphs for all json files recursively in RE-EXPORT-DIR"
+    )]
+    re_export_all: Option<String>,
 
     #[clap(long, help = "Sets the prefix to use when exporting files")]
     re_export_prefix: Option<String>,
@@ -61,6 +67,10 @@ fn main() {
         println!("Re-exporting data from {}", file_path);
         optimization::re_export(&file_path, args.re_export_prefix.as_deref())
             .expect("Failed to re-export data");
+    } else if let Some(dir_path) = args.re_export_all {
+        optimization::re_export_all(&dir_path)
+            .expect("Failed to re-export data");
+        
     } else {
         util::run_waf_command(&path, "build", HashMap::new()).expect("failed to build waf");
 
