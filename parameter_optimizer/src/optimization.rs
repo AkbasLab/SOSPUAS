@@ -273,7 +273,8 @@ fn write_hot_cold(state: &StateImpl, file_name: &str) -> Result<(), Box<dyn std:
     let smoother = crate::util::RangeSmoother::new(step_size, error_scores.as_slice());
     let smoothed_values: Vec<_> = smoother.ranges().collect();
 
-    let params_to_draw: Vec<&String> = state.results[0].parameters.keys().take(2).collect();
+    let mut params_to_draw: Vec<&String> = state.results[0].parameters.keys().take(2).collect();
+    params_to_draw.sort_by(|a, b| b.cmp(a));
     let points: Vec<_> = state
         .results
         .iter()
@@ -298,7 +299,7 @@ fn write_hot_cold(state: &StateImpl, file_name: &str) -> Result<(), Box<dyn std:
     // )?;
     //
 
-    const INCLUDE_POINTS_STDDEVS: f64 = 2.0;
+    const INCLUDE_POINTS_STDDEVS: f64 = 1.0;
     let areas = root.split_by_breakpoints([944], [80]);
     let (x_bounds, y_bounds, linear_m, linear_b) =
         get_bounds_and_regression(&points, INCLUDE_POINTS_STDDEVS);
@@ -324,6 +325,14 @@ fn write_hot_cold(state: &StateImpl, file_name: &str) -> Result<(), Box<dyn std:
         .axis_desc_style(("sans-serif", 30))
         .draw()?;
 
+    scatter_ctx
+        .draw_series(LineSeries::new(
+            (-50..=50).map(|x| x as f64).map(|x| (x, (x / 10.0).sqrt())),
+            //vec![(0.0, regression_func(0.0)), (50.0, regression_func(50.0))].into_iter(),
+            &BLUE,
+        ))?
+        .label("Average error");
+
     scatter_ctx.draw_series(points.iter().map(|(x, y, error)| {
         let mut i = 0;
         for limit in smoothed_values.iter() {
@@ -336,13 +345,6 @@ fn write_hot_cold(state: &StateImpl, file_name: &str) -> Result<(), Box<dyn std:
         let color = plotters::style::RGBColor(i as u8, (256 - i) as u8, 50);
         Circle::new((*x, *y), 2, color.filled())
     }))?;
-
-    scatter_ctx
-        .draw_series(LineSeries::new(
-            vec![(0.0, regression_func(0.0)), (50.0, regression_func(50.0))].into_iter(),
-            &BLUE,
-        ))?
-        .label("Average error");
 
     root.present().expect("Unable to write image to file");
 
