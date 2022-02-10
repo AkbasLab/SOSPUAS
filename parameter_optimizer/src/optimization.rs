@@ -62,9 +62,9 @@ static BASE_ARGUMENTS: [&str; 5] = [
     "--pNodes=8",
     "--packetInterval=1.5",
     "--calculateInterval=0.01",
-    "--spawnRadius=16",
+    "--spawnRadius=6",
 ];
-const TARGET_DISTANCE: f64 = 15.0;
+const TARGET_DISTANCE: f64 = 5.0;
 
 const MAX_SIMULATIONS: usize = 1000;
 

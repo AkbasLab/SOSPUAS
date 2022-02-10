@@ -9,7 +9,10 @@ import matplotlib.pyplot as plt
 import bisect
 from pathlib import Path
 from sklearn.linear_model import LinearRegression
+import pandas as pd
+import seaborn as sns
 
+from matplotlib.patches import Patch
 import matplotlib as mpl
 # Use true LaTeX and bigger font
 #mpl.rc('text', usetex=True)
@@ -36,9 +39,11 @@ ax = None
 
 series_format_order = ""
 d_values_map = {}
+average_origin_distance_keys = []
+average_origin_distance_values = []
 
-x_param_expected = "a"
-y_param_expected = "r"
+x_param_expected = "r"
+y_param_expected = "a"
 
 def export_single(path, prefix):
     '''Exports the data from a single json file to a graph
@@ -59,14 +64,14 @@ def export_single(path, prefix):
     obj = json.load(open(path))
     params = obj["params"]
 
-    x_param = params[0]["name"]
-    y_param = params[1]["name"]
+    x_param = params[1]["name"]
+    y_param = params[0]["name"]
     if x_param.strip() != x_param_expected:
-        print("x parameter is not a: " + x_param)
+        print("x parameter is not " + x_param_expected + ": got " + x_param)
         sys.exit(1)
 
     if y_param.strip() != y_param_expected:
-        print("y parameter is not r: " + y_param)
+        print("y parameter is not " + y_param_expected + ": got " + y_param)
         sys.exit(1)
 
     #print("X-axis param is " + x_param)
@@ -169,11 +174,12 @@ def export_single(path, prefix):
     label_path = os.path.join(parent_path, "label.txt")
     if os.path.exists(label_path):
         f = open(label_path) 
-        label = f.read()
+        label = f.read().strip()
         if len(label) > 30:
             print("WARN: Label file " + label_path + " is over 30 characters. Data may be obstructed on graph")
         if len(label) == 0:
-            print("WARN: Label file " + label_path + " empty")
+            print("ERROR: Label file " + label_path + " empty")
+            sys.exit(1)
         else:
             parts = list(map(lambda x: x.split("="), label.strip().split(" ")))
             vars = {}
@@ -181,6 +187,7 @@ def export_single(path, prefix):
                 vars[tup[0]] = float(tup[1])
 
             d = vars['d']
+            tx = vars['tx']
             #Write data points
             if d in d_values_map:
                 obj = d_values_map[d]
@@ -195,11 +202,17 @@ def export_single(path, prefix):
             d_values_map[d] = obj
 
     else:
-        print("Missing label " + label_path)
+        print("ERROR: Missing label " + label_path)
         print("Edit file with desired label and re-run to fix")
-        label=path
+        sys.exit(1)
 
-    ax.plot(x_new, y_new, label=label.strip())
+    #Use same weights from regression so that we only mean reasonable points
+    x_mean = np.average(x_values, None, weights)
+    y_mean = np.average(y_values, None, weights)
+    average_origin_distance_keys.append({'d': d, 'tx': tx})
+    average_origin_distance_values.append(np.sqrt(x_mean * x_mean + y_mean * y_mean))
+
+    ax.plot(x_new, y_new, label=label)
 
     print("y=", model.coef_, "x + ", model.intercept_, " for ", label)
     ax.set_xlabel(x_param)
@@ -216,18 +229,18 @@ def run_distance_analysis():
     '''Runs analysis for different values of D using the a and r data points collected from calling `export_single`
     '''
     global d_values_map
-    print(str(d_values_map))
     d_values = []
     da_dr_values = []
     for d, values in d_values_map.items():
 
-        feed_x = np.array(values["x_values"]).reshape(-1, 1)
-        feed_y = np.array(values["y_values"])
+        # Invert axis so that we get a quadratic relationship
+        feed_x = np.array(values["y_values"]).reshape(-1, 1)
+        feed_y = np.array(values["x_values"])
 
         model = LinearRegression()
         model.fit(feed_x, feed_y)
         r_2 = model.score(feed_x, feed_y)
-        print("for d ", d, "r=", model.coef_, "a + ", model.intercept_, " (r^2", r_2, ")")
+        print("for d ", d, x_param_expected, "=", model.coef_, y_param_expected, " + ", model.intercept_, " (r^2", r_2, ")")
 
         d_values.append(d)
         da_dr_values.append(model.coef_[0])
@@ -235,38 +248,36 @@ def run_distance_analysis():
         fig = plt.figure()
         ax = fig.add_subplot(111)
         ax.scatter(feed_x, feed_y)
-        ax.set_xlabel("a")
-        ax.set_ylabel("r")
+        ax.set_xlabel(y_param_expected)# We flipped the axis data, so flip the axis labels as well
+        ax.set_ylabel(x_param_expected)
 
-        x_new = np.linspace(np.min(feed_x), np.max(feed_y), 200)
+        x_new = np.linspace(np.min(feed_x), np.max(feed_x), 200)
         y_new = model.predict(x_new[:, np.newaxis])
         ax.plot(x_new, y_new)
 
         fig.savefig("all" + str(d) + ".png")
         plt.clf()
 
-    
-    fig = plt.figure()
-    ax = fig.add_subplot(111)
-    feed_x = np.array(d_values).reshape(-1, 1)
-    feed_y = np.array(da_dr_values)
 
-    ax.scatter(feed_x, feed_y)
-    ax.set_xlabel("d")
-    ax.set_ylabel("da/dr")
     print("X: " + str(d_values))
     print("Y: " + str(da_dr_values))
+    feed_x = np.array(d_values)
+    feed_y = np.array(da_dr_values)
 
-    model = LinearRegression()
+    model = np.poly1d(np.polyfit(feed_x, feed_y, 2))
+    polyline = np.linspace(np.min(feed_x), np.max(feed_x), 200)
+    coeffs = model.c
+    print(model)
+    print(coeffs)
+    print("FINAL REGRESSION ", "da_dr=", coeffs[0], "d^2 + ", coeffs[1], "d + ", coeffs[2])
 
-    model.fit(feed_x, feed_y)
-    r_2 = model.score(feed_x, feed_y)
-    print("FINAL REGRESSION ", "da_dr=", model.coef_, "d + ", model.intercept_, " (r^2", r_2, ")")
-
-    x_new = np.linspace(np.min(feed_x), np.max(feed_x), 200)
-    y_new = model.predict(x_new[:, np.newaxis])
-    ax.plot(x_new, y_new)
-
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    ax.set_xlabel("d")
+    ax.set_ylabel("da/dr")
+    ax.scatter(feed_x, feed_y)
+    ax.plot(polyline, model(polyline))
+    
     fig.savefig("overall.png")
     plt.clf()
 
@@ -297,5 +308,55 @@ if args.one_graph:
     print("Saved figure")
     fig.legend()
     fig.savefig(args.prefix + "hot_cold.png") 
+    plt.clf()
     run_distance_analysis()
+
+    #fig = plt.figure()
+    #print(average_origin_distance_keys)
+    #print(average_origin_distance_values)
+    #ax.set_xlabel("Simulation")
+    #ax.set_ylabel("Distance from origin")
+
+    # Maps values of d to the group index they will have on the graph
+    d_indices = {}
+    for i in range(0, len(average_origin_distance_keys)):
+        vars = average_origin_distance_keys[i]
+        if not vars['d'] in d_indices:
+            d_indices[vars['d']] = len(d_indices)
+    print("indices " + str(d_indices))
+
+    tx_indices = {}
+    for i in range(0, len(average_origin_distance_keys)):
+        vars = average_origin_distance_keys[i]
+        if not vars['tx'] in tx_indices:
+            tx_indices[vars['tx']] = len(tx_indices)
+
+    print("tx indices " + str(tx_indices))
+
+    # Maps a tx value to an array len d_indices. Each value in the value of d in array
+    # corrorsponds to the value of d given by d_indices
+    data = np.zeros((len(tx_indices), len(d_indices)))
+    print("before " + str(data))
+
+    for i in range(0, len(average_origin_distance_keys)):
+        vars = average_origin_distance_keys[i]
+        d = vars['d']
+        tx = vars['tx']
+        value = average_origin_distance_values[i]
+        data[tx_indices[tx]][d_indices[d]] = value
+
+    print("after " + str(data))
+
+    x_axis = np.arange(len(d_indices))
+    tx_labels = list(tx_indices.keys())
+    width = 0.27
+    for i in range(0, len(tx_indices)):
+        pos_x = (i - len(tx_indices) / 2) * width
+        plt.bar(x_axis + pos_x, data[i], width, label=tx_labels[i], align='edge')
+    plt.xticks(x_axis, d_indices.keys())
+    plt.ylabel("Average distance from center")
+    plt.xlabel("Distance parameter (d)")
+    plt.legend()
+    plt.savefig("distances.png") 
+    plt.clf()
 
