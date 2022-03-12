@@ -60,11 +60,11 @@ static STATE: OnceCell<State> = OnceCell::new();
 static BASE_ARGUMENTS: [&str; 5] = [
     "--duration=180",
     "--pNodes=8",
-    "--packetInterval=1.5",
+    "--packetInterval=0.3",
     "--calculateInterval=0.01",
-    "--spawnRadius=6",
+    "--spawnRadius=8.5",
 ];
-const TARGET_DISTANCE: f64 = 5.0;
+const TARGET_DISTANCE: f64 = 7.5;
 
 const MAX_SIMULATIONS: usize = 1000;
 

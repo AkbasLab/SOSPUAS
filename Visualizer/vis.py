@@ -131,6 +131,7 @@ def main():
         if "color" in parsed:
             colors.append(parsed)
         else:
+            print("Using default color for" + 
             parsed["pos"] = glm.vec3(parsed["x"], parsed["y"], parsed["z"])
             lines.append(parsed)
 
@@ -175,10 +176,10 @@ def main():
         gluPerspective(70, (display[0]/display[1]), 0.01, 500.0)
 
         #The position of the camera in 3d space
-        camera_pos = glm.vec3(0.0, 0.0, 10.0)
+        camera_pos = glm.vec3(3.0, 0.0, 10.0)
 
         #A unit vector pointing where the camera is looking - relative to the position of the camera
-        camera_forward = glm.vec3(0.0, 0.0, -1.0)
+        camera_forward = glm.normalize(glm.vec3(-0.3, 0.0, -1.0))
         keymap = {}
 
         for i in range(0, 256):
@@ -262,6 +263,7 @@ def main():
             glPushMatrix()
 
             #glRotatef(1, 3, 1, 1)
+            glClearColor(1.0, 1.0, 1.0, 1.0)
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
 
             gluLookAt(camera_pos.x, camera_pos.y, camera_pos.z, camera_pos.x + camera_forward.x, camera_pos.y + camera_forward.y, camera_pos.z + camera_forward.z, 0.0, 1.0, 0.0)
@@ -270,6 +272,7 @@ def main():
             for color in colors:
                 if simulation_time > color["time"]:
                     #Re compute the current colors using the current time
+                    #uav_colors[color["ip_address"]] = color["color"]
                     uav_colors[color["ip_address"]] = color["color"]
 
         #Counts the number of UAV's that have no future position assignments
@@ -398,6 +401,8 @@ def main():
                 break
 
         simulation_time += delta_time
+        #if simulation_time < 5:
+        #    simulation_time += delta_time
         #print("time at {}, delta {}".format(simulation_time, delta_time))
 
     if use_mad:

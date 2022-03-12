@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 import bisect
 from pathlib import Path
 from sklearn.linear_model import LinearRegression
+from scipy.optimize import curve_fit
 import pandas as pd
 import seaborn as sns
 
@@ -148,6 +149,9 @@ def export_single(path, prefix):
         if ax == None:
             print("Made subplot")
             ax = fig.add_subplot(111)
+            ax.spines['right'].set_visible(False)
+            ax.spines['top'].set_visible(False)
+
     #ax = fig.axes()
     ax.scatter(x_values, y_values, s=2, c=colors)
 
@@ -159,7 +163,7 @@ def export_single(path, prefix):
             # Indexing looks odd because `len(percentiles == 256`
             weights.append(0)
         else:
-            weights.append(1000.0 / error / error)
+            weights.append(1000.0 / error)
 
     feed_x = np.array(x_values).reshape(-1, 1)
     feed_y = np.array(y_values)
@@ -213,6 +217,8 @@ def export_single(path, prefix):
     average_origin_distance_values.append(np.sqrt(x_mean * x_mean + y_mean * y_mean))
 
     ax.plot(x_new, y_new, label=label)
+    ax.spines['right'].set_visible(False)
+    ax.spines['top'].set_visible(False)
 
     print("y=", model.coef_, "x + ", model.intercept_, " for ", label)
     ax.set_xlabel(x_param)
@@ -224,6 +230,9 @@ def export_single(path, prefix):
         fig.savefig(name)
         print("Wrote " + name)
 
+def func_exp(x, a, b, c):
+    #c = 0
+    return a * np.exp(b * x) + c
 
 def run_distance_analysis():
     '''Runs analysis for different values of D using the a and r data points collected from calling `export_single`
@@ -233,9 +242,9 @@ def run_distance_analysis():
     da_dr_values = []
     for d, values in d_values_map.items():
 
-        # Invert axis so that we get a quadratic relationship
-        feed_x = np.array(values["y_values"]).reshape(-1, 1)
-        feed_y = np.array(values["x_values"])
+        #NO # Invert axis so that we get a quadratic relationship
+        feed_x = np.array(values["x_values"]).reshape(-1, 1)
+        feed_y = np.array(values["y_values"])
 
         model = LinearRegression()
         model.fit(feed_x, feed_y)
@@ -247,13 +256,19 @@ def run_distance_analysis():
  
         fig = plt.figure()
         ax = fig.add_subplot(111)
+        ax.spines['right'].set_visible(False)
+        ax.spines['top'].set_visible(False)
+
         ax.scatter(feed_x, feed_y)
-        ax.set_xlabel(y_param_expected)# We flipped the axis data, so flip the axis labels as well
-        ax.set_ylabel(x_param_expected)
+        ax.set_xlabel(x_param_expected)
+        ax.set_ylabel(y_param_expected)
 
         x_new = np.linspace(np.min(feed_x), np.max(feed_x), 200)
         y_new = model.predict(x_new[:, np.newaxis])
+
         ax.plot(x_new, y_new)
+        ax.spines['right'].set_visible(False)
+        ax.spines['top'].set_visible(False)
 
         fig.savefig("all" + str(d) + ".png")
         plt.clf()
@@ -264,19 +279,20 @@ def run_distance_analysis():
     feed_x = np.array(d_values)
     feed_y = np.array(da_dr_values)
 
-    model = np.poly1d(np.polyfit(feed_x, feed_y, 2))
-    polyline = np.linspace(np.min(feed_x), np.max(feed_x), 200)
-    coeffs = model.c
-    print(model)
-    print(coeffs)
-    print("FINAL REGRESSION ", "da_dr=", coeffs[0], "d^2 + ", coeffs[1], "d + ", coeffs[2])
+    xx = np.linspace(np.min(feed_x), np.max(feed_x), 1000)
+
+    popt, pcov = curve_fit(func_exp, feed_x, feed_y, p0=[1, -0.5, 1], maxfev=5000)
+    print("Raw regression results: " + str(popt))
+    print("FINAL REGRESSION ", "da_dr=", popt[0], "*e^(", popt[1], "*d)+", popt[2])
 
     fig = plt.figure()
     ax = fig.add_subplot(111)
+    ax.spines['right'].set_visible(False)
+    ax.spines['top'].set_visible(False)
     ax.set_xlabel("d")
     ax.set_ylabel("da/dr")
     ax.scatter(feed_x, feed_y)
-    ax.plot(polyline, model(polyline))
+    ax.plot(xx, func_exp(xx, *popt))
     
     fig.savefig("overall.png")
     plt.clf()
@@ -306,7 +322,7 @@ else:
 
 if args.one_graph:
     print("Saved figure")
-    fig.legend()
+    fig.legend(fontsize=10)
     fig.savefig(args.prefix + "hot_cold.png") 
     plt.clf()
     run_distance_analysis()
@@ -350,11 +366,16 @@ if args.one_graph:
     x_axis = np.arange(len(d_indices))
     tx_labels = list(tx_indices.keys())
     width = 0.27
+    colors = ['r', 'y', 'c']
+    ax = plt.subplot(111)
     for i in range(0, len(tx_indices)):
         pos_x = (i - len(tx_indices) / 2) * width
-        plt.bar(x_axis + pos_x, data[i], width, label=tx_labels[i], align='edge')
+        ax.bar(x_axis + pos_x, data[i], width, label=tx_labels[i], align='edge', edgecolor='k', color=colors[i])
+
+    ax.spines['right'].set_visible(False)
+    ax.spines['top'].set_visible(False)
     plt.xticks(x_axis, d_indices.keys())
-    plt.ylabel("Average distance from center")
+    plt.ylabel("Magnitude of a and r")
     plt.xlabel("Distance parameter (d)")
     plt.legend()
     plt.savefig("distances.png") 
