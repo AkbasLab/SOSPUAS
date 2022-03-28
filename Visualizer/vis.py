@@ -131,7 +131,6 @@ def main():
         if "color" in parsed:
             colors.append(parsed)
         else:
-            print("Using default color for" + 
             parsed["pos"] = glm.vec3(parsed["x"], parsed["y"], parsed["z"])
             lines.append(parsed)
 
@@ -157,7 +156,8 @@ def main():
 
     for i, uav in enumerate(uavs):
         #All UAV's are white by default
-        uav_colors[uav] = glm.vec3(1, (i / len(uavs))**1.5, 1)
+        uav_colors[uav] = glm.vec3(0.0, 0.0, 0.0)
+        #uav_colors[uav] = glm.vec3(0, (i / len(uavs))**1.5, 0)
 
     target_fps = 144
     if render_uavs:
@@ -269,15 +269,18 @@ def main():
             gluLookAt(camera_pos.x, camera_pos.y, camera_pos.z, camera_pos.x + camera_forward.x, camera_pos.y + camera_forward.y, camera_pos.z + camera_forward.z, 0.0, 1.0, 0.0)
 
 
-            for color in colors:
-                if simulation_time > color["time"]:
-                    #Re compute the current colors using the current time
-                    #uav_colors[color["ip_address"]] = color["color"]
-                    uav_colors[color["ip_address"]] = color["color"]
+            #Re compute the current colors using the current time
+            #for color in colors:
+            #    if simulation_time > color["time"]:
+            #        #uav_colors[color["ip_address"]] = color["color"]
+            #        uav_colors[color["ip_address"]] = color["color"]
 
         #Counts the number of UAV's that have no future position assignments
         uav_done_with_pos_cout = 0
         for uav in uavs:
+            glEnable(GL_LINE_SMOOTH)
+            glLineWidth(3)
+
             #We need to find 2 lines in the list of all lines that tell us this uav's position before and after this re rendering's time step
             #We will the interpolate these two time points with the uav's position and our middle time in this rendering, allowing us
             #to have a smooth re-rendering of the swarm
@@ -400,9 +403,9 @@ def main():
                 print("Finished MAD data collection")
                 break
 
-        simulation_time += delta_time
-        #if simulation_time < 5:
-        #    simulation_time += delta_time
+        #simulation_time += delta_time
+        if simulation_time < 25:
+            simulation_time += delta_time
         #print("time at {}, delta {}".format(simulation_time, delta_time))
 
     if use_mad:

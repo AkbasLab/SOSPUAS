@@ -328,22 +328,30 @@ if args.one_graph:
     run_distance_analysis()
 
     #fig = plt.figure()
-    #print(average_origin_distance_keys)
-    #print(average_origin_distance_values)
+    print("keys " + str(average_origin_distance_keys))
+    print("values " + str(average_origin_distance_values))
     #ax.set_xlabel("Simulation")
     #ax.set_ylabel("Distance from origin")
 
+    # Determine the order average_origin_distance* lists should be in when we sort by `tx` so that
+    # they appear sorted in the ledgend
+    keys = []
+    values = []
+    for i, _key in sorted(enumerate(average_origin_distance_keys), key=lambda x: x[1]['tx']):
+        keys.append(average_origin_distance_keys[i])
+        values.append(average_origin_distance_values[i])
+
     # Maps values of d to the group index they will have on the graph
     d_indices = {}
-    for i in range(0, len(average_origin_distance_keys)):
-        vars = average_origin_distance_keys[i]
+    for i in range(0, len(keys)):
+        vars = keys[i]
         if not vars['d'] in d_indices:
             d_indices[vars['d']] = len(d_indices)
     print("indices " + str(d_indices))
 
     tx_indices = {}
-    for i in range(0, len(average_origin_distance_keys)):
-        vars = average_origin_distance_keys[i]
+    for i in range(0, len(keys)):
+        vars = keys[i]
         if not vars['tx'] in tx_indices:
             tx_indices[vars['tx']] = len(tx_indices)
 
@@ -354,11 +362,11 @@ if args.one_graph:
     data = np.zeros((len(tx_indices), len(d_indices)))
     print("before " + str(data))
 
-    for i in range(0, len(average_origin_distance_keys)):
-        vars = average_origin_distance_keys[i]
+    for i in range(0, len(keys)):
+        vars = keys[i]
         d = vars['d']
         tx = vars['tx']
-        value = average_origin_distance_values[i]
+        value = values[i]
         data[tx_indices[tx]][d_indices[d]] = value
 
     print("after " + str(data))
