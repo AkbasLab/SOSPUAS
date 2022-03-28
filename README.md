@@ -1,3 +1,19 @@
+# SOSPUAS
+### Stability Optimized Swarming Protocol for Unmanned Aerial Systems
+
+This repository contains the simulation, data analysis, and visualization tools for the SOSPUAS UAV swarming paper.
+
+This project was forked from NS-3 to make building and working with it easier.
+* Many files and directories are come from the fork such as `src` `Makefile`, `waf`, etc.
+* `scratch/non-ideal/` holds code for the simulation from the paper
+* `Visualizer/` contains a custom OpenGL visualization tool, which reads position files generated
+by NS-3 and renders them in real time
+* `parameter_optimizer/` runs thousands of individual simulations of `non-ideal` with different
+swarm parameters, parses the position files, evaluates the error of a single error simulation,
+then provides this infomation to the optimization algorithm, which explores better and better
+parameters.
+
+## See Network Simulator 3 information below:
 
 The Network Simulator, Version 3
 ================================

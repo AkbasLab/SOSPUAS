@@ -51,6 +51,9 @@ UAV::GetTypeId (void)
           .AddAttribute ("ClientAddress", "The address of the this uav", Ipv4AddressValue(Ipv4Address((uint32_t) 0)),
                            MakeIpv4AddressAccessor(&UAV::m_uavAddress),
                            MakeIpv4AddressChecker())
+          .AddAttribute ("LocalAddress", "The UDP multicast address of this uav", Ipv4AddressValue(Ipv4Address((uint32_t) 0)),
+                           MakeIpv4AddressAccessor(&UAV::m_local),
+                           MakeIpv4AddressChecker())
 
           .AddAttribute("PacketInterval", "", TimeValue(Seconds(1)),
                            MakeTimeAccessor(&UAV::m_packetInterval),
@@ -79,6 +82,15 @@ UAV::~UAV ()
 {
   NS_LOG_FUNCTION (this);
   m_socket = 0;
+  NS_LOG_INFO("UAV: " << m_uavAddress << "received"); 
+  for (const auto& entry : m_packetRecvCount) {
+    NS_LOG_INFO("  " << entry.first << " - " << entry.second);
+  }
+  NS_LOG_INFO("UAV: " << m_uavAddress << "sent"); 
+  for (const auto& entry : m_packetSendCount) {
+    NS_LOG_INFO("  " << entry.first << " - " << entry.second);
+  }
+  NS_LOG_INFO(""); 
 }
 
 void
@@ -129,7 +141,7 @@ UAV::StartApplication (void)
 
   uint32_t lowAddress = m_uavAddress.Get() & 0xFF;
   if (ShouldDoCyberAttack() && lowAddress == 2) {
-    //Have the ....2 node be the cyber attack because .1 is the central node
+    //Have the number 2 node be the cyber attack because .1 is the central node
     Simulator::Schedule (Seconds(15.0), &UAV::Cyberattack, this);
   }
 }
@@ -175,10 +187,10 @@ UAV::HandleRead (Ptr<Socket> socket)
       if (ipv4Addr == m_uavAddress) {
         continue;
       }
+      m_packetRecvCount[ipv4Addr]++;
       
       UAVData data;
       packet->CopyData(reinterpret_cast<uint8_t*>(&data), sizeof(UAVData));
-      
       
       auto& entry = m_swarmData[ipv4Addr];
       entry.data = data;
@@ -246,8 +258,9 @@ UAV::Send (void)
       //Don't send packets to ourselves
       continue;
     }
-    
-    m_socket->SendTo(reinterpret_cast<uint8_t*>(&payload), sizeof(payload), 0, InetSocketAddress(currentPeer, m_port));
+    auto addr = InetSocketAddress(currentPeer, m_port);
+    m_socket->SendTo(reinterpret_cast<uint8_t*>(&payload), sizeof(payload), 0, addr);
+    m_packetSendCount[currentPeer]++;
     m_sent++;
 
   }
@@ -281,9 +294,6 @@ T map(T value, T leftMin, T leftMax, T rightMin, T rightMax) {
 
 
 
-const double VIRTUAL_FORCES_A = 0.3;
-const double VIRTUAL_FORCES_R = 1.5;
-
 void UAV::Calculate() {
   auto mobilityModel = this->GetNode()->GetObject<ns3::WaypointMobilityModel>();
 
@@ -304,7 +314,7 @@ void UAV::Calculate() {
     if (m_uavType == UAVDataType::VIRTUAL_FORCES_POSITION && data.data.type == UAVDataType::VIRTUAL_FORCES_CENTRAL_POSITION) {
 
       //NS_LOG_INFO("  attracting to center" << toOther);
-      //This could be simplified to attraction attraction += ;data.data.position - myPosition;
+      //This could be simplified to attraction += data.data.position - myPosition;
       //But I leave it like this to clearly show the magnitude of the force and the direction seperately
       float force = length;
       attraction += toOther * force;
@@ -312,7 +322,7 @@ void UAV::Calculate() {
       //attraction += toOther;
     }
     if (m_uavType == UAVDataType::VIRTUAL_FORCES_POSITION && data.data.type == UAVDataType::VIRTUAL_FORCES_POSITION) {
-      //Force is inversely porpotional to length
+      //Force is inversely proportional to length
       float force = 1.0 / length;
       //And points away from the other node
       repulsion += -toOther * force;
@@ -324,7 +334,7 @@ void UAV::Calculate() {
   double dt = m_calculateInterval.GetSeconds();
   double mass = 1;
   //a=F/m
-  Vector acceleration = (attraction * VIRTUAL_FORCES_A + repulsion * VIRTUAL_FORCES_R) / mass;
+  Vector acceleration = (attraction * s_Parameters.a + repulsion * s_Parameters.r) / mass;
   m_velocity += acceleration * dt;
 
   auto now = Simulator::Now();

@@ -42,3 +42,8 @@ build/
 version.cache
 peda-session-*
 
+positions.csv
+all-data.csv
+speed-mad_graph.png
+mad_graph.png
+
