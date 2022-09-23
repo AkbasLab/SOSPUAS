@@ -13,6 +13,17 @@ swarm parameters, parses the position files, evaluates the error of a single err
 then provides this infomation to the optimization algorithm, which explores better and better
 parameters.
 
+For detailed information and citation:<br />
+T. Neubauer and M. I. Akbas. "SOSUAS: Stability Optimized Swarming for Unmanned Aerial Systems." In the AIAA/IEEE Digital Avionics Systems Conference (DASC), September, 2022.
+
+@inproceedings{ Neubauer2022sosuas,<br />
+  title={SOSUAS: Stability Optimized Swarming for Unmanned Aerial Systems},<br />
+  author={Neubauer, Troy and Akba{\c{s}}, Mustafa {\.I}lhan},<br />
+  booktitle={AIAA/IEEE Digital Avionics Systems Conference (DASC)},<br />
+  year={2022},<br />
+  organization={AIAA/IEEE}<br />
+}
+
 ## See Network Simulator 3 information below:
 
 The Network Simulator, Version 3
