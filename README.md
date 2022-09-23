@@ -14,15 +14,15 @@ then provides this infomation to the optimization algorithm, which explores bett
 parameters.
 
 For detailed information and citation:<br />
-T. Neubauer and M. I. Akbas. "SOSUAS: Stability Optimized Swarming for Unmanned Aerial Systems." In the AIAA/IEEE Digital Avionics Systems Conference (DASC), September, 2022.
+* **T. Neubauer and M. I. Akbas. "SOSUAS: Stability Optimized Swarming for Unmanned Aerial Systems." In the AIAA/IEEE Digital Avionics Systems Conference (DASC), September, 2022.**
 
-@inproceedings{ Neubauer2022sosuas,<br />
+* **@inproceedings{ Neubauer2022sosuas,<br />
   title={SOSUAS: Stability Optimized Swarming for Unmanned Aerial Systems},<br />
   author={Neubauer, Troy and Akba{\c{s}}, Mustafa {\.I}lhan},<br />
   booktitle={AIAA/IEEE Digital Avionics Systems Conference (DASC)},<br />
   year={2022},<br />
   organization={AIAA/IEEE}<br />
-}
+}**
 
 ## See Network Simulator 3 information below:
 
